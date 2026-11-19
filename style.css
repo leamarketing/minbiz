@@ -132,7 +132,7 @@ legend { font-weight: 700; padding: 0 6px; }
 .note.warn { background: var(--warn-soft); }
 
 /* Forside */
-.hero { padding: 48px 0 32px; }
+.hero { padding-top: 48px; padding-bottom: 32px; }
 .hero .lead { font-size: 1.2rem; max-width: 40rem; color: var(--ink); }
 .steps3 { counter-reset: s; list-style: none; padding: 0; margin: 0; }
 .steps3 li { counter-increment: s; position: relative; padding-left: 52px; }
@@ -140,7 +140,7 @@ legend { font-weight: 700; padding: 0 6px; }
   content: counter(s); position: absolute; left: 0; top: 0; width: 38px; height: 38px; border-radius: 50%;
   display: grid; place-items: center; font-weight: 700; background: var(--accent-soft); color: var(--accent);
 }
-section.block { padding: 36px 0 8px; }
+section.block { padding-top: 36px; padding-bottom: 8px; }
 .plan-example ol { padding-left: 1.3em; margin: 0; }
 .plan-example li { margin: 6px 0; }
 .plan-example .when { color: var(--muted); font-size: .9rem; }
