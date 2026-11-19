@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src https://xprcbxubejpazmdbpsmy.supabase.co; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>MinBiz-appen: profil, idé og plan</title>
+<meta name="description" content="Logg inn i MinBiz. Fyll inn profil og idé, få en plan med datoer, og følg dagens steg på tavlen.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" defer></script>
+<script src="config.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Hopp til innholdet</a>
+<div class="demo-bar" id="demo-bar" hidden>
+  <div class="wrap"><span class="tag demo">Demo</span> Du prøver MinBiz uten konto. Ingenting lagres, og alt forsvinner når du lukker siden. <a href="app.html">Logg inn for å lagre</a>.</div>
+</div>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="MinBiz, forsiden">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1d5a82"/><path d="M14 46h10V36h10V26h10V16" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="16" r="5" fill="#f2c46d"/></svg>
+      MinBiz
+    </a>
+    <nav aria-label="Konto">
+      <span id="who" class="muted small"></span>
+      <button type="button" class="btn small quiet" id="logout" hidden>Logg ut</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <p id="loading" class="muted">Laster MinBiz ...</p>
+
+  <!-- Innlogging -->
+  <section id="login" class="view" aria-labelledby="h-login" hidden>
+    <div class="grid two">
+      <div class="card stack">
+        <h1 id="h-login">Logg inn i MinBiz</h1>
+        <p>Skriv e-postadressen din, så sender vi en innloggingslenke. Ingen passord. Har du konto i Min dag, bruker du samme adresse.</p>
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="email">E-postadresse</label>
+            <input type="email" id="email" name="email" autocomplete="email" required inputmode="email">
+          </div>
+          <div class="btnrow">
+            <button type="submit" class="btn" id="login-btn">Send meg en lenke</button>
+          </div>
+        </form>
+        <p id="login-msg" role="status" aria-live="polite"></p>
+      </div>
+      <div class="card stack">
+        <h2>Vil du se hvordan det virker først?</h2>
+        <p>Demoen kjører uten konto. Du kan fylle inn profil og idé, lage en plan og flytte steg på tavlen. Ingenting lagres.</p>
+        <p><a class="btn ghost" href="app.html?demo=1">Åpne demo</a></p>
+        <p class="muted small">Les om <a href="personvern.html">personvern</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Appen -->
+  <div id="app" hidden>
+    <h1 class="sr-only">MinBiz</h1>
+    <nav class="appnav" aria-label="Deler av appen" id="appnav">
+      <button type="button" data-view="dash" aria-current="page">Oversikt</button>
+      <button type="button" data-view="profil">Min profil</button>
+      <button type="button" data-view="ide">Min idé</button>
+      <button type="button" data-view="plan">Plan</button>
+      <button type="button" data-view="data">Mine data</button>
+    </nav>
+
+    <!-- Oversikt -->
+    <section class="view stack" id="view-dash" aria-labelledby="h-dash">
+      <h2 id="h-dash">Oversikt</h2>
+      <div id="dash-empty" class="card stack" hidden>
+        <h3>Kom i gang</h3>
+        <ol>
+          <li>Fyll inn <button type="button" class="linkish" data-goto="profil">profilen din</button>.</li>
+          <li>Beskriv <button type="button" class="linkish" data-goto="ide">idéen din</button>.</li>
+          <li>Lag <button type="button" class="linkish" data-goto="plan">planen</button>.</li>
+        </ol>
+      </div>
+      <div id="dash-plan" class="stack" hidden>
+        <div class="field" id="plan-pick-wrap" hidden>
+          <label for="plan-pick">Vis plan</label>
+          <select id="plan-pick"></select>
+        </div>
+        <p id="moved-msg" class="note" role="status" hidden></p>
+        <div id="celebrate" class="card celebrate" role="status" hidden></div>
+        <div class="card stack">
+          <h3 id="h-today">I dag</h3>
+          <ul class="today-list" id="today" aria-labelledby="h-today"></ul>
+          <div>
+            <p class="small" id="progress-text"></p>
+            <progress id="progress" max="100" value="0" aria-labelledby="progress-text"></progress>
+          </div>
+        </div>
+        <div>
+          <h3>Tavlen</h3>
+          <p class="muted small">Flytt et steg med knappene på kortet.</p>
+          <div class="board" id="board"></div>
+        </div>
+        <div class="grid two">
+          <div class="card stack">
+            <h3>Merkene dine</h3>
+            <ul class="merits" id="merits"></ul>
+          </div>
+          <div class="card stack" id="support"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Profil -->
+    <section class="view" id="view-profil" aria-labelledby="h-profil" hidden>
+      <h2 id="h-profil">Min profil</h2>
+      <form id="profile-form" class="card" novalidate>
+        <div class="field">
+          <label for="interest-input">Interesser <span class="hint">Skriv én interesse og trykk Legg til.</span></label>
+          <div class="inline-add">
+            <input type="text" id="interest-input" maxlength="60" autocomplete="off">
+            <button type="button" class="btn quiet" id="interest-add">Legg til</button>
+          </div>
+          <ul class="chips" id="interest-list" aria-label="Interessene dine"></ul>
+        </div>
+        <div class="field">
+          <label for="ambitions">Ambisjoner <span class="hint">Hva vil du oppnå? Stort eller lite.</span></label>
+          <textarea id="ambitions" maxlength="2000"></textarea>
+        </div>
+        <div class="field">
+          <label for="hours">Timer per uke <span class="hint">Hvor mange timer har du faktisk i en vanlig uke?</span></label>
+          <input type="number" id="hours" min="0" max="168" step="1" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="has_already">Hva jeg har fra før <span class="hint">Utstyr, kunder, nettverk, en nettside, et lokale ...</span></label>
+          <textarea id="has_already" maxlength="2000"></textarea>
+        </div>
+        <div class="field">
+          <label for="skills">Ferdigheter <span class="hint">Hva er du god på?</span></label>
+          <textarea id="skills" maxlength="2000"></textarea>
+        </div>
+        <fieldset>
+          <legend>Stjernetegn</legend>
+          <label class="check"><input type="checkbox" id="use_horoscope"> Vis stjernetegnet mitt som inspirasjon</label>
+          <div id="horo-box" class="stack" hidden>
+            <div id="horo-birth-field" class="field" hidden>
+              <label for="birth_local">Fødselsdato <span class="hint">Brukes bare i denne nettleseren for å finne stjernetegnet. Den sendes ikke til oss.</span></label>
+              <input type="date" id="birth_local">
+            </div>
+            <p id="horo-out" aria-live="polite"></p>
+          </div>
+        </fieldset>
+        <div class="btnrow">
+          <button type="submit" class="btn">Lagre profilen</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Idé -->
+    <section class="view" id="view-ide" aria-labelledby="h-ide" hidden>
+      <h2 id="h-ide">Min idé</h2>
+      <div class="grid two">
+        <form id="idea-form" class="card" novalidate>
+          <div class="field">
+            <label for="title">Tittel <span class="hint">Et arbeidsnavn holder.</span></label>
+            <input type="text" id="title" maxlength="200" required>
+          </div>
+          <div class="field">
+            <label for="description">Beskrivelse</label>
+            <textarea id="description" maxlength="4000"></textarea>
+          </div>
+          <fieldset>
+            <legend>Hva slags idé er det?</legend>
+            <label class="check"><input type="radio" name="kind" value="ekstra_inntekt"> Ekstra inntekt ved siden av</label>
+            <label class="check"><input type="radio" name="kind" value="bedrift" checked> En egen bedrift</label>
+            <label class="check"><input type="radio" name="kind" value="imperium"> Et imperium: noe stort, over tid</label>
+            <label class="check"><input type="radio" name="kind" value="ide"> Bare en idé foreløpig</label>
+          </fieldset>
+          <div class="field">
+            <label for="goal">Mål <span class="hint">Hvordan vet du at du har lykkes?</span></label>
+            <textarea id="goal" maxlength="2000"></textarea>
+          </div>
+          <div class="field">
+            <label for="audience">Hvem det er for</label>
+            <textarea id="audience" maxlength="2000"></textarea>
+          </div>
+          <div class="field">
+            <label for="promise">Løftet ditt <span class="hint">Hva lover du dem, i én setning?</span></label>
+            <textarea id="promise" maxlength="1000"></textarea>
+          </div>
+          <p id="idea-err" class="missing" role="alert"></p>
+          <div class="btnrow"><button type="submit" class="btn">Lagre idéen</button></div>
+        </form>
+        <div class="card idea-card stack" aria-labelledby="h-idea-card">
+          <h3 id="h-idea-card">Idékortet ditt</h3>
+          <dl id="idea-card"></dl>
+          <p class="muted small">Tomme felt står som [Mangler] til du fyller dem inn.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Plan -->
+    <section class="view stack" id="view-plan" aria-labelledby="h-plan" hidden>
+      <h2 id="h-plan">Plan</h2>
+      <div id="plan-needs-idea" class="note warn" hidden>Lagre idéen din først, så kan MinBiz lage en plan. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
+      <form id="plan-form" class="card stack" novalidate>
+        <p id="suggest" class="note"></p>
+        <fieldset>
+          <legend>Velg plantype</legend>
+          <div class="ptypes" id="ptypes"></div>
+        </fieldset>
+        <div class="field">
+          <label for="start_date">Startdato</label>
+          <input type="date" id="start_date" required>
+        </div>
+        <h3>Slik blir planen</h3>
+        <ol class="preview" id="preview"></ol>
+        <p id="plan-exists" class="muted small" hidden>Du har allerede en plan. En ny plan legges ved siden av, og den gamle blir liggende.</p>
+        <div class="btnrow"><button type="submit" class="btn" id="plan-btn">Lag planen</button></div>
+      </form>
+    </section>
+
+    <!-- Mine data -->
+    <section class="view stack" id="view-data" aria-labelledby="h-data" hidden>
+      <h2 id="h-data">Mine data</h2>
+      <div class="card stack">
+        <h3>Last ned</h3>
+        <p>Alt du har lagt inn i MinBiz, samlet i én fil (JSON).</p>
+        <div class="btnrow"><button type="button" class="btn quiet" id="export">Last ned dataene mine</button></div>
+      </div>
+      <div class="card stack">
+        <h3>Slett</h3>
+        <p>Sletter profil, idéer, planer, steg og merker i MinBiz. Innloggingen din og det du har i Min dag blir ikke rørt. Slettingen kan ikke angres.</p>
+        <div class="btnrow"><button type="button" class="btn danger" id="delete-all">Slett alle MinBiz-dataene mine</button></div>
+        <p id="delete-msg" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<footer class="foot">
+  <div class="wrap">
+    <ul>
+      <li><a href="./">Forside</a></li>
+      <li><a href="personvern.html">Personvern</a></li>
+    </ul>
+    <p>MinBiz er et planleggingsverktøy. Det gir ikke investerings-, skatte- eller juridiske råd.</p>
+  </div>
+</footer>
+</body>
+</html>
