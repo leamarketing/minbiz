@@ -193,7 +193,7 @@
   function demoSeed() {
     var c = function (q, text, fav) { return { id: uuid(), q: q, text: text, fav: !!fav }; };
     return {
-      profile: { user_id: "demo", interests: ["Friluftsliv", "Fjorden", "Matlaging"], ambitions: "Ha en ekstra inntekt om sommeren og bli kjent med flere som besøker bygda.", hours_per_week: 8, has_already: "To kajakker, egen bil, bor ved sjøen", skills: "Padling, guiding, lokalkunnskap", use_horoscope: false },
+      profile: { user_id: "demo", interests: ["Friluftsliv", "Fjorden", "Matlaging"], ambitions: "Ha en ekstra inntekt om sommeren og bli kjent med flere som besøker bygda.", hours_per_week: 8, has_already: "To kajakker, egen bil, bor ved sjøen", skills: "Padling, guiding, lokalkunnskap", use_horoscope: true },
       ideas: [{
         id: uuid(), user_id: "demo", created_at: new Date().toISOString(),
         title: "Kajakkutleie ved fjorden", kind: "ekstra_inntekt",
@@ -272,8 +272,11 @@
       if (b.getAttribute("data-view") === navKey) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
     Array.prototype.forEach.call(document.querySelectorAll("#app .view"), function (v) { v.hidden = v.id !== "view-" + view; });
+    stopExercise();
+    ["idea-cheer", "bs-cheer", "profil-cheer"].forEach(function (id) { $(id).hidden = true; });
     if (view === "plan") renderPlanForm();
-    if (view === "ide") renderIdeaCard();
+    if (view === "profil") renderProfileView();
+    if (view === "ide") renderIdeaView();
     if (view === "dash") renderDash();
     if (view === "brainstorm") renderBrainstorm();
     if (view === "analyse") renderAnalyse();
@@ -306,7 +309,8 @@
     $("has_already").value = p.has_already || "";
     $("skills").value = p.skills || "";
     $("use_horoscope").checked = !!p.use_horoscope;
-    $("birth_local").value = DEMO ? "" : (load("minbiz_birth_local") || "");
+    /* Demoen bruker en eksempeldato, så inspirasjonslinjen for stjernetegn kan vises. */
+    $("birth_local").value = DEMO ? "1990-07-30" : (load("minbiz_birth_local") || "");
     renderHoroscope();
   }
   function renderHoroscope() {
@@ -320,20 +324,27 @@
     if (!sign) { out.appendChild(h("span", { class: "muted" }, ["Fødselsdato: ikke satt."])); return; }
     out.appendChild(h("span", null, ["Stjernetegn: ", h("b", null, [sign]), " "]));
     out.appendChild(h("span", { class: "tag trad" }, ["Tradisjon og inspirasjon"]));
+    if (HORO_LINE[sign]) out.appendChild(h("span", { class: "horo-line" }, [HORO_LINE[sign]]));
     out.appendChild(h("span", { class: "hint" }, [(memberBirth ? "Hentet fra profilen din i Min dag. " : "") + "Brukes bare til refleksjon, aldri som grunnlag for penger, lån eller avtaler."]));
+  }
+  /* Lagrer det som står i profilskjemaet nå. Brukes både av skjemaet og av spørsmål-for-spørsmål. */
+  async function persistProfile() {
+    var hrs = String($("hours").value).trim();
+    var n = hrs === "" ? null : Math.max(0, Math.min(168, parseInt(hrs, 10) || 0));
+    S.profile = await db.saveProfile({
+      interests: interests.slice(), ambitions: $("ambitions").value.trim() || null, hours_per_week: n,
+      has_already: $("has_already").value.trim() || null, skills: $("skills").value.trim() || null,
+      use_horoscope: $("use_horoscope").checked
+    });
+    if (!DEMO) store("minbiz_birth_local", $("birth_local").value || null);
+    chosenType = null;
+    return S.profile;
   }
   async function saveProfile(ev) {
     ev.preventDefault();
-    var hrs = String($("hours").value).trim();
-    var n = hrs === "" ? null : Math.max(0, Math.min(168, parseInt(hrs, 10) || 0));
     try {
-      S.profile = await db.saveProfile({
-        interests: interests.slice(), ambitions: $("ambitions").value.trim() || null, hours_per_week: n,
-        has_already: $("has_already").value.trim() || null, skills: $("skills").value.trim() || null,
-        use_horoscope: $("use_horoscope").checked
-      });
-      if (!DEMO) store("minbiz_birth_local", $("birth_local").value || null);
-      chosenType = null;
+      await persistProfile();
+      renderProfileSide();
       toast("Profilen er lagret.");
     } catch (e) { toast("Kunne ikke lagre profilen: " + errText(e)); }
   }
@@ -370,7 +381,28 @@
       chosenType = null;
       renderFlow();
       toast("Idéen er lagret. Neste: brainstorming.");
+      if (!cur) cheer("idea");
     } catch (e) { toast("Kunne ikke lagre idéen: " + errText(e)); }
+  }
+  /* Arbeidsnavn fra beskrivelsen, så idéen kan lagres før den har fått et navn. */
+  function autoTitle() {
+    var d = $("description").value.trim().split(/[.!?\n]/)[0].trim();
+    if (!d) return "Uten navn ennå";
+    var w = d.split(/\s+/).slice(0, 6).join(" ");
+    return w.charAt(0).toUpperCase() + w.slice(1, 80);
+  }
+  /* Lagrer det som står i idéskjemaet nå, uten krav om tittel. Brukes av spørsmål-for-spørsmål. */
+  async function persistIdea() {
+    var cur = idea();
+    if (!$("title").value.trim()) $("title").value = autoTitle();
+    var row = { title: $("title").value.trim().slice(0, 200), description: $("description").value.trim() || null, kind: currentKind(), goal: $("goal").value.trim() || null, audience: $("audience").value.trim() || null, promise: $("promise").value.trim() || null };
+    if (cur) row.id = cur.id;
+    var saved = norm(await db.saveIdea(row));
+    if (cur) S.ideas[0] = saved; else S.ideas.unshift(saved);
+    chosenType = null;
+    renderIdeaCard();
+    if (!cur) cheer("idea");
+    return saved;
   }
 
   /* ---------- Plan ---------- */
@@ -767,10 +799,20 @@
   async function addCard(k) {
     var el = $("bs-in-" + k), v = el.value.trim();
     if (!v) { el.focus(); return; }
+    if (await addCardTexts(k, [v])) { renderBrainstorm(); var n = $("bs-in-" + k); if (n) n.focus(); }
+  }
+  /* Legger ett eller flere idékort til under et spørsmål og lagrer med en gang. */
+  async function addCardTexts(k, texts) {
     var b = JSON.parse(JSON.stringify(idea().brainstorm));
-    if (b.cards.length >= 100) { toast("Du har 100 kort. Slett noen før du legger til flere."); return; }
-    b.cards.push({ id: uuid(), q: k, text: v.slice(0, 200), fav: false });
-    if (await saveFlow({ brainstorm: b })) { renderBrainstorm(); var n = $("bs-in-" + k); if (n) n.focus(); }
+    texts = texts.map(function (t) { return String(t).trim(); }).filter(Boolean);
+    if (!texts.length) return false;
+    if (b.cards.length + texts.length > 100) { toast("Du har nesten 100 kort. Slett noen før du legger til flere."); return false; }
+    /* Feiring bare for det aller første kortet. I demoen: første kort du legger til i økten. */
+    var wasEmpty = b.cards.length === 0;
+    texts.forEach(function (t) { b.cards.push({ id: uuid(), q: k, text: t.slice(0, 200), fav: false }); });
+    var ok = await saveFlow({ brainstorm: b });
+    if (ok && (DEMO || wasEmpty)) cheer("card");
+    return ok;
   }
   async function toggleFav(id, k) {
     var b = JSON.parse(JSON.stringify(idea().brainstorm));
@@ -1005,6 +1047,522 @@
     body.appendChild(h("p", { class: "muted small" }, ["«Lag planen» bruker anbefalt plantype med start i dag. MinBiz gir ikke skatte-, juridiske eller investeringsråd."]));
   }
 
+  /* ---------- Inspirasjon: ett spørsmål om gangen, tale, «Jeg står fast», eksempler, speiling og feiring ---------- */
+  /* Én kort, generell linje per stjernetegn. Tradisjon og inspirasjon, aldri spådom, aldri om penger. */
+  var HORO_LINE = {
+    "Væren": "Tradisjonen forbinder Væren med mot til å begynne. Hva kunne du startet på i det små?",
+    "Tyren": "Tyren forbindes med tålmodighet og sans for ting som varer. Hva liker du å bygge sakte og godt?",
+    "Tvillingene": "Tvillingene forbindes med nysgjerrighet og gode samtaler. Hvem kunne du fortalt om idéen din?",
+    "Krepsen": "Krepsen forbindes med omsorg og trygge rammer. Hvem rundt deg vil du gjøre hverdagen lettere for?",
+    "Løven": "Løven forbindes med varme og glede ved å skape. Hva liker du å vise frem av det du lager?",
+    "Jomfruen": "Jomfruen forbindes med øye for detaljer og god orden. Hva ser du ofte kunne vært gjort litt bedre?",
+    "Vekten": "Vekten forbindes med sans for balanse og samarbeid. Hvem kunne du gjort dette sammen med?",
+    "Skorpionen": "Skorpionen forbindes med dybde og utholdenhet. Hvilket tema kunne du gravd deg ned i med glede?",
+    "Skytten": "Skytten forbindes med eventyrlyst og læring. Hva har du lyst til å lære mer om?",
+    "Steinbukken": "Steinbukken forbindes med stø kurs og ansvar. Hvilket lite steg kunne du tatt hver uke?",
+    "Vannmannen": "Vannmannen forbindes med nye tanker og fellesskap. Hva kunne vært gjort på en ny måte der du bor?",
+    "Fiskene": "Fiskene forbindes med fantasi og innlevelse. Hvilket bilde dukker opp når du tenker på idéen din?"
+  };
+
+  /* Lokale småting (valgt visning, hvor du er i spørsmålene, feiring vist). I demoen bare i minnet. */
+  var MEM = {};
+  function localGet(k) { return DEMO ? (MEM[k] == null ? null : MEM[k]) : load(k); }
+  function localSet(k, v) { if (DEMO) MEM[k] = v; else store(k, v); }
+
+  var PROFILE_Q = [
+    { f: "interests", type: "text", q: "Hva gjør du helst en ledig lørdag?", hint: "Skriv det som faller deg inn, gjerne flere ting med komma mellom. Svarene blir til interessene dine." },
+    { f: "skills", type: "area", q: "Hva spør folk deg ofte om hjelp til?", hint: "Det sier ofte noe om hva du er god på. Svaret havner under Ferdigheter." },
+    { f: "has_already", type: "area", q: "Hva har du fra før som kan komme til nytte?", hint: "Utstyr, et lokale, en bil, et nettverk, kunder eller erfaring fra en jobb." },
+    { f: "ambitions", type: "area", q: "Hva drømmer du om å få til? Stort eller lite.", hint: "Det kan være en ekstra inntekt, mer frihet eller noe du har lyst til å skape." },
+    { f: "hours", type: "number", q: "Hvor mange timer har du i en vanlig uke?", hint: "Et grovt anslag holder. Du kan endre det når som helst." },
+    { f: "horoscope", type: "horo", q: "Vil du ha stjernetegnet ditt med som inspirasjon?", hint: "Helt valgfritt. Det vises som tradisjon og inspirasjon, aldri som grunnlag for penger, lån eller avtaler." }
+  ];
+  var IDEA_Q = [
+    { f: "description", type: "area", q: "Hva har du lyst til å lage, gjøre eller tilby?", hint: "Skriv med dine egne ord, som om du fortalte det til en venn over en kopp kaffe." },
+    { f: "audience", type: "area", q: "Hvem ser du for deg at dette hjelper?", hint: "Tenk på en konkret person eller gruppe." },
+    { f: "kind", type: "kind", q: "Hvor stort tenker du at dette skal bli?", hint: "Du kan endre det senere." },
+    { f: "title", type: "text", q: "Hva vil du kalle idéen?", hint: "Et arbeidsnavn holder. Det kan byttes når som helst." },
+    { f: "goal", type: "area", q: "Hvordan vet du at du har lykkes?", hint: "Gjerne noe du kan se eller kjenne på." },
+    { f: "promise", type: "area", q: "Hva lover du dem, i én setning?", hint: "Hva blir bedre for dem etter at de har brukt det du tilbyr?" }
+  ];
+  var KIND_OPTS = [["ekstra_inntekt", "Ekstra inntekt ved siden av"], ["bedrift", "En egen bedrift"], ["imperium", "Et imperium: noe stort, over tid"], ["ide", "Bare en idé foreløpig"]];
+  var GUIDE = { profil: { qs: PROFILE_Q, key: "minbiz_guide_profil" }, ide: { qs: IDEA_Q, key: "minbiz_guide_ide" } };
+
+  function each(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
+  function mode() { return localGet("minbiz_mode") === "all" ? "all" : "guide"; }
+  function applyMode() {
+    var m = mode();
+    each(".modebar button", function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-mode") === m ? "true" : "false"); });
+    $("profil-guide").hidden = m !== "guide"; $("profile-form").hidden = m === "guide";
+    $("ide-guide").hidden = m !== "guide"; $("idea-form").hidden = m === "guide";
+    $("profil-gstatus").hidden = $("ide-gstatus").hidden = m !== "guide";
+    var pause = m === "guide"
+      ? (DEMO ? "Det er helt greit å ta en pause. I demoen lagres svarene bare i minnet, og alt forsvinner når du lukker siden." : "Det er helt greit å ta en pause. Hvert svar lagres med en gang, og neste gang fortsetter du der du slapp.")
+      : (DEMO ? "Det er helt greit å ta en pause. I demoen forsvinner alt når du lukker siden." : "Det er helt greit å ta en pause. Trykk Lagre før du går, så ligger alt klart neste gang.");
+    $("profil-pause").textContent = pause; $("ide-pause").textContent = pause;
+  }
+
+  function uniq(list) { var seen = {}; return list.filter(function (x) { var k = x.toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }); }
+  function fieldGet(f) {
+    if (f === "interests") return interests.join(", ");
+    if (f === "kind") return currentKind();
+    if (f === "horoscope") return $("use_horoscope").checked;
+    return $(f).value;
+  }
+  function fieldSet(f, v) {
+    if (f === "interests") { interests = uniq(splitList(v).map(function (x) { return x.slice(0, 60); })).slice(0, 30); renderInterests(); return; }
+    if (f === "kind") { each('input[name="kind"]', function (r) { r.checked = r.value === v; }); return; }
+    if (f === "horoscope") { $("use_horoscope").checked = !!v; renderHoroscope(); return; }
+    $(f).value = v;
+  }
+  function gStep(w) {
+    var n = parseInt(localGet(GUIDE[w].key), 10);
+    return isNaN(n) ? 0 : Math.max(0, Math.min(GUIDE[w].qs.length, n));
+  }
+
+  function renderGuide(w, focus) {
+    var box = $(w + "-guide"); box.textContent = "";
+    var qs = GUIDE[w].qs, n = gStep(w);
+    if (n >= qs.length) { renderGuideDone(w, box, focus); return; }
+    var Q = qs[n], inId = "g-" + w + "-in", hintId = "g-" + w + "-hint";
+    box.appendChild(h("p", { class: "gprog small muted" }, ["Spørsmål " + (n + 1) + " av " + qs.length]));
+    box.appendChild(h("progress", { max: String(qs.length), value: String(n), "aria-hidden": "true" }));
+    var input = null;
+    if (Q.type === "kind") {
+      var fs = h("fieldset", { class: "gq", "aria-describedby": hintId }, [h("legend", { class: "q" }, [Q.q]), h("p", { id: hintId, class: "hint" }, [Q.hint])]);
+      var cur = currentKind();
+      KIND_OPTS.forEach(function (o) {
+        var r = h("input", { type: "radio", name: "g-kind", value: o[0], onchange: function () { fieldSet("kind", o[0]); renderIdeaCard(); } });
+        r.checked = cur === o[0];
+        fs.appendChild(h("label", { class: "check" }, [r, " " + o[1]]));
+      });
+      input = fs.querySelector("input:checked") || fs.querySelector("input");
+      box.appendChild(fs);
+    } else if (Q.type === "horo") {
+      var fs2 = h("fieldset", { class: "gq", "aria-describedby": hintId }, [h("legend", { class: "q" }, [Q.q]), h("p", { id: hintId, class: "hint" }, [Q.hint])]);
+      var cb = h("input", { type: "checkbox", id: "g-" + w + "-horo" }); cb.checked = $("use_horoscope").checked;
+      fs2.appendChild(h("label", { class: "check" }, [cb, " Ja, vis stjernetegnet mitt som inspirasjon"]));
+      var dt = null, dWrap = null;
+      if (!memberBirth) {
+        dt = h("input", { type: "date", id: "g-" + w + "-birth" }); dt.value = $("birth_local").value;
+        dWrap = h("div", { class: "field" }, [h("label", { for: "g-" + w + "-birth" }, ["Fødselsdato ", h("span", { class: "hint" }, ["Brukes bare i denne nettleseren for å finne stjernetegnet. Den sendes ikke til oss."])]), dt]);
+        fs2.appendChild(dWrap);
+      }
+      var out = h("p", { class: "small", "aria-live": "polite" });
+      fs2.appendChild(out);
+      var upd = function () {
+        $("use_horoscope").checked = cb.checked;
+        if (dt) $("birth_local").value = dt.value;
+        if (dWrap) dWrap.hidden = !cb.checked;
+        renderHoroscope();
+        out.textContent = "";
+        if (!cb.checked) return;
+        var s = zodiac(memberBirth || $("birth_local").value);
+        if (!s) { out.appendChild(h("span", { class: "muted" }, ["Skriv inn fødselsdatoen for å se stjernetegnet."])); return; }
+        out.appendChild(h("span", { class: "tag trad" }, ["Tradisjon og inspirasjon"]));
+        out.appendChild(h("span", { class: "horo-line" }, [s + ": " + HORO_LINE[s]]));
+      };
+      cb.addEventListener("change", upd); if (dt) dt.addEventListener("change", upd);
+      upd();
+      input = cb;
+      box.appendChild(fs2);
+    } else {
+      box.appendChild(h("label", { for: inId, class: "q" }, [Q.q]));
+      box.appendChild(h("p", { id: hintId, class: "hint" }, [Q.hint]));
+      if (Q.type === "area") input = h("textarea", { id: inId, maxlength: Q.f === "promise" ? "1000" : "2000", rows: "4", "aria-describedby": hintId });
+      else if (Q.type === "number") input = h("input", { type: "number", id: inId, min: "0", max: "168", step: "1", inputmode: "numeric", "aria-describedby": hintId });
+      else input = h("input", { type: "text", id: inId, maxlength: Q.f === "title" ? "200" : "400", autocomplete: "off", "aria-describedby": hintId });
+      input.value = fieldGet(Q.f) == null ? "" : fieldGet(Q.f);
+      if (Q.type !== "area") input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); guideAnswer(w, false, 1); } });
+      box.appendChild(input);
+      var mb = Q.type === "number" ? null : micBtn(input);
+      if (mb) box.appendChild(h("div", { class: "microw" }, [mb]));
+    }
+    box.appendChild(h("div", { class: "btnrow" }, [
+      n > 0 ? h("button", { type: "button", class: "btn quiet", onclick: function () { guideAnswer(w, false, -1); } }, ["Tilbake"]) : null,
+      h("button", { type: "button", class: "btn quiet", onclick: function () { guideAnswer(w, true, 1); } }, ["Vet ikke ennå"]),
+      h("button", { type: "button", class: "btn", onclick: function () { guideAnswer(w, false, 1); } }, [n === qs.length - 1 ? "Ferdig" : "Neste"])
+    ]));
+    box.appendChild(h("div", { class: "btnrow" }, [h("button", { type: "button", class: "linkish", onclick: function () { openStuck(w); } }, ["Jeg står fast"])]));
+    if (focus && input) input.focus();
+  }
+
+  function renderGuideDone(w, box, focus) {
+    var hd = h("h3", { tabindex: "-1" }, [w === "profil" ? "Takk, nå har profilen et grunnlag" : "Idéen din er skrevet ned"]);
+    box.appendChild(hd);
+    if (w === "profil") {
+      var dl = h("dl", { class: "basis" });
+      [["Interesser", interests.join(", ")], ["Ferdigheter", $("skills").value], ["Har fra før", $("has_already").value], ["Ambisjoner", $("ambitions").value], ["Timer per uke", $("hours").value]].forEach(function (r) {
+        dl.appendChild(h("dt", null, [r[0]]));
+        dl.appendChild(missing(r[1]) ? h("dd", { class: "missing" }, ["[Mangler]"]) : h("dd", null, [String(r[1]).trim()]));
+      });
+      box.appendChild(dl);
+      box.appendChild(h("p", { class: "small muted" }, ["Det som står som [Mangler], kan du fylle inn når du vil."]));
+      box.appendChild(h("div", { class: "btnrow" }, [
+        h("button", { type: "button", class: "btn", "data-goto": "ide" }, ["Gå videre til Min idé"]),
+        h("button", { type: "button", class: "btn quiet", onclick: function () { localSet(GUIDE[w].key, "0"); renderGuide(w, true); } }, ["Gå gjennom spørsmålene igjen"])
+      ]));
+    } else {
+      box.appendChild(h("p", null, ["Idékortet ved siden av viser det du har skrevet. Det som står som [Mangler], kan du fylle inn når du vil."]));
+      box.appendChild(h("div", { class: "btnrow" }, [
+        h("button", { type: "button", class: "btn", "data-goto": "brainstorm" }, ["Neste: brainstorming"]),
+        h("button", { type: "button", class: "btn quiet", onclick: function () { localSet(GUIDE[w].key, "0"); renderGuide(w, true); } }, ["Gå gjennom spørsmålene igjen"])
+      ]));
+    }
+    if (focus) hd.focus();
+  }
+
+  function ideaHasContent() {
+    return ["title", "description", "audience", "goal", "promise"].some(function (f) { return !missing($(f).value); });
+  }
+  async function guideAnswer(w, unknown, delta) {
+    var G = GUIDE[w], n = gStep(w), Q = G.qs[n], st = $(w + "-gstatus");
+    var before = fieldGet(Q.f);
+    if (Q.type === "kind") { if (unknown) fieldSet("kind", "ide"); }
+    else if (Q.type === "horo") { if (unknown) fieldSet("horoscope", false); }
+    else {
+      var el = $("g-" + w + "-in"), v = unknown ? "" : el.value;
+      if (Q.f === "hours" && !unknown && String(v).trim() !== "") {
+        var num = Number(v);
+        if (isNaN(num) || num < 0 || num > 168) { st.textContent = "Skriv et tall mellom 0 og 168, eller trykk Vet ikke ennå."; el.focus(); return; }
+      }
+      fieldSet(Q.f, v);
+    }
+    var changed = unknown || String(before) !== String(fieldGet(Q.f)) || Q.type === "kind" || Q.type === "horo";
+    var msg = "";
+    if (changed) {
+      try {
+        if (w === "profil") await persistProfile();
+        else if (idea() || ideaHasContent()) await persistIdea();
+        if (unknown && Q.f === "title") msg = "Helt greit. Idéen har fått arbeidsnavnet «" + $("title").value + "», så den kan lagres. Du kan bytte det når du vil.";
+        else if (unknown) msg = "Helt greit. Det står som [Mangler], og du kan komme tilbake til det når du vil.";
+        else msg = DEMO ? "Svaret er lagret i demoen." : "Svaret er lagret.";
+      } catch (e) { st.textContent = "Kunne ikke lagre svaret: " + errText(e) + ". Svaret ligger fortsatt her. Prøv igjen om litt."; return; }
+    }
+    st.textContent = msg;
+    localSet(G.key, String(Math.max(0, n + delta)));
+    renderGuide(w, true);
+    if (w === "profil") renderProfileSide(); else renderIdeaSide();
+    renderFlow();
+  }
+
+  /* ---------- Tale: nettleserens egen talegjenkjenning ---------- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var rec = null, recBtn = null;
+  function micIcon() {
+    var ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("aria-hidden", "true");
+    var r = document.createElementNS(ns, "rect"); r.setAttribute("x", "9"); r.setAttribute("y", "3"); r.setAttribute("width", "6"); r.setAttribute("height", "11"); r.setAttribute("rx", "3"); svg.appendChild(r);
+    var p = document.createElementNS(ns, "path"); p.setAttribute("d", "M5 11a7 7 0 0 0 14 0M12 18v3"); svg.appendChild(p);
+    return svg;
+  }
+  function micBtn(target) {
+    if (!SR) return null;
+    var b = h("button", { type: "button", class: "btn small quiet mic", "aria-pressed": "false", title: "Bruker nettleserens egen talegjenkjenning" }, [micIcon(), h("span", null, ["Snakk inn"])]);
+    b.addEventListener("click", function () { toggleMic(b, target); });
+    return b;
+  }
+  function stopMic() { if (rec) { try { rec.stop(); } catch (e) { /* allerede stoppet */ } } }
+  function toggleMic(btn, el) {
+    if (rec) { var same = recBtn === btn; stopMic(); if (same) return; }
+    var r;
+    try { r = new SR(); } catch (e) { toast("Talegjenkjenningen virker ikke i denne nettleseren. Du kan skrive i stedet."); return; }
+    r.lang = "nb-NO"; r.interimResults = false; r.continuous = false; r.maxAlternatives = 1;
+    rec = r; recBtn = btn;
+    btn.setAttribute("aria-pressed", "true"); btn.lastChild.textContent = "Stopp";
+    r.onresult = function (e) {
+      var t = "";
+      for (var i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript;
+      t = t.trim();
+      if (!t) return;
+      var cur = el.value.trim();
+      el.value = (cur ? cur + (el.tagName === "TEXTAREA" ? "\n" : " ") : "") + t;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    r.onerror = function (e) {
+      var er = e && e.error;
+      toast(er === "not-allowed" || er === "service-not-allowed" ? "Nettleseren fikk ikke bruke mikrofonen. Du kan skrive i stedet."
+        : er === "no-speech" ? "Hørte ingenting. Prøv igjen, eller skriv." : er === "aborted" ? "Opptaket er stoppet." : "Talegjenkjenningen virket ikke nå. Du kan skrive i stedet.");
+    };
+    r.onend = function () {
+      btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Snakk inn";
+      if (rec === r) { rec = null; recBtn = null; }
+    };
+    try { r.start(); toast("Lytter. Snakk, og trykk Stopp når du er ferdig."); }
+    catch (e2) { r.onend(); toast("Talegjenkjenningen virket ikke nå. Du kan skrive i stedet."); }
+  }
+
+  /* ---------- Jeg står fast ---------- */
+  var SPARKS = [
+    "Hva spør folk deg om hjelp til?",
+    "Hva savner du i bygda eller nabolaget?",
+    "Hva irriterer deg som noen burde løse?",
+    "Hva gjorde du som barn som du glemte tiden med?",
+    "Hvem kjenner du som trenger noe du kan?"
+  ];
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function sparkList() {
+    var list = SPARKS.slice();
+    var ints = interests.length ? interests : ((S.profile && S.profile.interests) || []);
+    if (ints.length >= 2) {
+      var two = shuffle(ints).slice(0, 2);
+      list.push("Hva skjer hvis du kombinerer " + two[0].toLowerCase() + " og " + two[1].toLowerCase() + "?");
+    }
+    return shuffle(list).slice(0, 3);
+  }
+  var stuckSparks = { profil: [], ide: [] };
+  var lastField = { profil: "ambitions", ide: "description" };
+  function openStuck(w) {
+    var box = $(w + "-stuck");
+    stuckSparks[w] = sparkList();
+    box.textContent = "";
+    var hd = h("h3", { tabindex: "-1" }, ["Når tankene står stille"]);
+    box.appendChild(hd);
+    box.appendChild(h("p", null, ["Det er helt vanlig. Velg ett av spørsmålene og skriv det første som dukker opp. Ingenting er feil her."]));
+    box.appendChild(h("div", { id: w + "-sparks", class: "stack" }));
+    box.appendChild(h("div", { class: "btnrow" }, [
+      h("button", { type: "button", class: "btn quiet", onclick: function () { stuckSparks[w] = sparkList(); renderSparks(w); } }, ["Tre nye spørsmål"]),
+      h("button", { type: "button", class: "btn quiet", onclick: function () { openExercise(w); } }, ["En øvelse på fem minutter"]),
+      h("button", { type: "button", class: "btn quiet", onclick: function () { stopExercise(); box.hidden = true; var hd2 = $(w === "profil" ? "h-profil" : "h-ide"); hd2.setAttribute("tabindex", "-1"); hd2.focus(); } }, ["Lukk"])
+    ]));
+    box.appendChild(h("div", { id: w + "-ex", class: "exercise stack", hidden: true }));
+    renderSparks(w);
+    box.hidden = false;
+    hd.focus();
+  }
+  function renderSparks(w) {
+    var wrap = $(w + "-sparks"); wrap.textContent = "";
+    stuckSparks[w].forEach(function (q, i) {
+      var qId = w + "-sp-q" + i, tId = w + "-sp-t" + i;
+      var ta = h("textarea", { id: tId, rows: "2", maxlength: "500", "aria-labelledby": qId });
+      var mb = micBtn(ta);
+      wrap.appendChild(h("div", { class: "spark stack" }, [
+        h("p", { id: qId, class: "q" }, [q]),
+        ta,
+        h("div", { class: "btnrow" }, [mb,
+          h("button", { type: "button", class: "btn small", onclick: function () { textToCards(w, [ta.value]); } }, ["Bruk som idékort"]),
+          h("button", { type: "button", class: "btn small quiet", onclick: function () { textToField(w, ta.value); } }, ["Bruk i feltet"])
+        ])
+      ]));
+    });
+  }
+  /* Feltet svaret havner i: spørsmålet du står på, ellers sist brukte felt i skjemaet. */
+  function stuckTarget(w) {
+    if (mode() === "guide") { var g = $("g-" + w + "-in"); if (g) return { el: g, guide: true }; }
+    return { el: $(lastField[w]), guide: false };
+  }
+  async function textToField(w, text) {
+    text = String(text || "").trim();
+    if (!text) { toast("Skriv et svar først."); return; }
+    var t = stuckTarget(w), el = t.el;
+    var cur = el.value.trim();
+    if (el.id === "g-profil-in" && gStep("profil") === 0) el.value = cur ? cur + ", " + text : text;
+    else el.value = cur ? cur + (el.tagName === "TEXTAREA" ? "\n" : " ") + text : text;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    if (t.guide) { el.focus(); toast("Lagt inn i svaret ditt. Trykk Neste for å lagre."); return; }
+    if (mode() === "all") { el.focus(); toast("Lagt inn i skjemaet. Husk å lagre."); return; }
+    try {
+      if (w === "profil") await persistProfile(); else await persistIdea();
+      var lab = document.querySelector('label[for="' + el.id + '"]');
+      toast("Lagt til under «" + (lab ? lab.firstChild.textContent.trim() : "feltet") + "» og lagret.");
+      if (w === "profil") renderProfileSide(); else renderIdeaSide();
+    } catch (e) { toast("Kunne ikke lagre: " + errText(e)); }
+  }
+  async function textToCards(w, texts) {
+    texts = texts.map(function (x) { return String(x || "").trim(); }).filter(Boolean).slice(0, 20);
+    if (!texts.length) { toast("Skriv et svar først."); return; }
+    try {
+      if (!idea()) {
+        if (!$("title").value.trim()) $("title").value = texts[0].split(/\s+/).slice(0, 6).join(" ").slice(0, 80);
+        await persistIdea();
+      }
+    } catch (e) { toast("Kunne ikke lagre idéen: " + errText(e)); return; }
+    if (await addCardTexts("muligheter", texts)) {
+      toast((texts.length === 1 ? "Idékortet er lagt" : texts.length + " idékort er lagt") + " under «Hvilke muligheter ser du?» i brainstormingen.");
+      if (currentView === "ide") renderIdeaView(); else renderFlow();
+    }
+  }
+
+  /* Fem minutter: nedtelling bare mens øvelsen går. */
+  var EX = { w: null, left: 300, timer: null };
+  function fmtClock(s) { return Math.floor(s / 60) + ":" + pad(s % 60); }
+  function openExercise(w) {
+    stopExercise();
+    var box = $(w + "-ex"); box.textContent = ""; box.hidden = false;
+    EX.w = w; EX.left = 300;
+    var hd = h("h4", { tabindex: "-1" }, ["Fem minutter, uten å vurdere"]);
+    var ta = h("textarea", { id: w + "-ex-t", rows: "6", maxlength: "4000" });
+    var clock = h("p", { class: "clock", role: "timer", "aria-live": "off", id: w + "-ex-clock" }, [fmtClock(300)]);
+    var startBtn = h("button", { type: "button", class: "btn", id: w + "-ex-start" }, ["Start"]);
+    startBtn.addEventListener("click", function () { if (EX.timer) pauseExercise(); else startExercise(); });
+    box.appendChild(hd);
+    box.appendChild(h("p", null, ["Skriv alt som dukker opp, én tanke per linje. Ingen andre ser det, og ingenting er for lite eller for rart. Vurderingen tar du etterpå."]));
+    box.appendChild(clock);
+    box.appendChild(h("div", { class: "field" }, [h("label", { for: w + "-ex-t" }, ["Det som dukker opp"]), ta]));
+    box.appendChild(h("div", { class: "btnrow" }, [startBtn, micBtn(ta)]));
+    box.appendChild(h("div", { class: "btnrow" }, [
+      h("button", { type: "button", class: "btn small", onclick: function () { textToCards(w, ta.value.split("\n")); } }, ["Gjør hver linje til et idékort"]),
+      h("button", { type: "button", class: "btn small quiet", onclick: function () { textToField(w, ta.value); } }, ["Bruk i feltet"])
+    ]));
+    hd.focus();
+  }
+  function startExercise() {
+    var b = $(EX.w + "-ex-start"); if (!b) return;
+    if (EX.left <= 0) EX.left = 300;
+    b.textContent = "Pause";
+    toast("Fem minutter starter nå.");
+    var t = $(EX.w + "-ex-t"); if (t) t.focus();
+    EX.timer = setInterval(function () {
+      EX.left--;
+      var c = $(EX.w + "-ex-clock"); if (c) c.textContent = fmtClock(Math.max(0, EX.left));
+      if (EX.left <= 0) { pauseExercise(); var bb = $(EX.w + "-ex-start"); if (bb) bb.textContent = "Start på nytt"; toast("Fem minutter er gått. Se over det du skrev, og ta med det du vil."); }
+    }, 1000);
+  }
+  function pauseExercise() {
+    if (EX.timer) { clearInterval(EX.timer); EX.timer = null; }
+    var b = EX.w && $(EX.w + "-ex-start"); if (b && EX.left > 0) b.textContent = "Fortsett";
+  }
+  function stopExercise() { if (EX.timer) { clearInterval(EX.timer); EX.timer = null; } stopMic(); }
+
+  /* ---------- Eksempler fra profilen (regelbasert) ---------- */
+  var TYPES = [
+    { name: "Tjeneste", f: function (a, b) { return "hjelp andre med det du kan innen «" + a + "»" + (b ? ", kombinert med «" + b + "»" : ""); } },
+    { name: "Kurs", f: function (a) { return "lær bort «" + a + "» til nybegynnere, i små grupper"; } },
+    { name: "Opplevelse", f: function (a, b) { return "en dag med «" + a + "»" + (b ? " og «" + b + "»" : "") + " for besøkende eller naboer"; } },
+    { name: "Produkt", f: function (a) { return "noe du lager selv som har med «" + a + "» å gjøre, solgt lokalt"; } },
+    { name: "Digitalt", f: function (a) { return "korte videoer eller en enkel nettside der du deler det du kan om «" + a + "»"; } }
+  ];
+  var COMBOS = [
+    [/friluft|tur|fjell|natur|skog/, /mat|kokk|bål|bake/, "Opplevelse", "guidede turer med bålmat"],
+    [/padl|kajakk|fjord|sjø|båt|fiske/, /guid|lokal|histori/, "Opplevelse", "guidede turer på sjøen med lokale historier"],
+    [/mat|bake|kokk/, /barn|famil/, "Kurs", "matkurs for barn og foreldre"],
+    [/hage|plant|dyrk/, /mat|kokk/, "Kurs", "kurs i å dyrke og lage mat av egne grønnsaker"],
+    [/strikk|sy|søm|snekr|treverk|håndverk/, /histori|lokal|tradisjon/, "Produkt", "håndlagde ting med lokal historie bak"],
+    [/musikk|sang|gitar|piano/, /barn|eldre/, "Tjeneste", "musikkstunder for barn eller eldre"],
+    [/foto|bilde|video/, /natur|friluft|fjord|nordlys/, "Digitalt", "bilder og korte videoer fra naturen der du bor"],
+    [/data|pc|teknologi|mobil/, /eldre|nabo/, "Tjeneste", "hjelp med PC og mobil for eldre"]
+  ];
+  var exOffset = 0;
+  function profileWords() {
+    return uniq(interests.concat(splitList($("skills").value)).map(function (x) { return x.toLowerCase(); }).filter(function (x) { return x.length <= 40; })).slice(0, 8);
+  }
+  function exampleList() {
+    var w = profileWords(), out = [], seen = {};
+    var push = function (type, text, key) { key = key || text; if (seen[key]) return; seen[key] = 1; out.push({ type: type, text: text }); };
+    for (var i = 0; i < w.length; i++) for (var j = 0; j < w.length; j++) {
+      if (i === j) continue;
+      COMBOS.forEach(function (c) { if (c[0].test(w[i]) && c[1].test(w[j])) push(c[2], w[i] + " + " + w[j] + ": " + c[3], c[3]); });
+    }
+    for (var k = 0; k < w.length * TYPES.length && out.length < 12; k++) {
+      var a = w[k % w.length], b = w.length > 1 ? w[(k + 1) % w.length] : null, T = TYPES[k % TYPES.length];
+      var two = b && T.f.length > 1;
+      push(T.name, a + (two ? " + " + b : "") + ": " + T.f(a, two ? b : null));
+    }
+    return out;
+  }
+  function renderExamples() {
+    var box = $("ide-examples"); box.textContent = "";
+    box.appendChild(h("h3", null, ["Eksempler fra profilen din"]));
+    var list = exampleList();
+    if (!list.length) {
+      box.appendChild(h("p", { class: "small" }, ["Når profilen har noen interesser eller ferdigheter, dukker det opp eksempler her. ", h("button", { type: "button", class: "linkish", "data-goto": "profil" }, ["Fyll inn profilen"])]));
+      return;
+    }
+    var start = (exOffset * 3) % list.length, pick = [];
+    for (var i = 0; i < Math.min(3, list.length); i++) pick.push(list[(start + i) % list.length]);
+    box.appendChild(h("ul", { class: "examples" }, pick.map(function (x) {
+      var txt = x.text.charAt(0).toUpperCase() + x.text.slice(1);
+      return h("li", null, [
+        h("p", null, [h("span", { class: "tag idea" }, ["Eksempel"]), " ", h("span", { class: "muted small" }, [x.type])]),
+        h("p", null, [txt]),
+        h("button", { type: "button", class: "btn small quiet", onclick: function () { useExample(txt); } }, ["Bruk som utgangspunkt"])
+      ]);
+    })));
+    if (list.length > 3) box.appendChild(h("div", { class: "btnrow" }, [h("button", { type: "button", class: "btn small quiet", onclick: function () { exOffset++; renderExamples(); } }, ["Vis andre eksempler"])]));
+    box.appendChild(h("p", { class: "muted small" }, ["Eksemplene er satt sammen av ordene i profilen din, som tankestartere. De sier ingenting om hva noe kan gi i inntekt."]));
+  }
+  function useExample(txt) {
+    var d = $("description"), cur = d.value.trim();
+    d.value = cur ? cur + "\n" + txt : txt;
+    renderIdeaCard();
+    if (mode() === "guide") { localSet(GUIDE.ide.key, "0"); renderGuide("ide", true); toast("Eksempelet står i svaret ditt. Endre det gjerne, og trykk Neste for å lagre."); }
+    else { d.focus(); toast("Eksempelet står i beskrivelsen. Endre det gjerne, og husk å lagre."); }
+  }
+
+  /* ---------- Speiling: dette har du allerede ---------- */
+  function clean(t) { return String(t || "").trim().replace(/\s*\n+\s*/g, ", ").replace(/[.,;:\s]+$/, ""); }
+  function renderMirror(id, inIdea) {
+    var box = $(id); box.textContent = "";
+    box.appendChild(h("h3", null, ["Dette har du allerede"]));
+    var has = clean($("has_already").value), sk = clean($("skills").value), hrs = String($("hours").value).trim();
+    var lines = [];
+    if (has) lines.push(["Du har allerede: ", has + "."]);
+    if (sk) lines.push(["Folk kan spørre deg om: ", sk + "."]);
+    if (interests.length) lines.push(["Du bryr deg om: ", interests.join(", ").toLowerCase() + "."]);
+    if (hrs !== "") lines.push(["Du har satt av omtrent ", hrs + " timer i uka."]);
+    if (!lines.length) {
+      box.appendChild(h("p", null, ["Hva har du gjort mange ganger, som andre synes er vanskelig?"]));
+      box.appendChild(h("p", { class: "small muted" }, ["Svaret kan bli starten på profilen din. Mange har mer å bygge på enn de tror."]));
+      if (inIdea) box.appendChild(h("p", null, [h("button", { type: "button", class: "linkish", "data-goto": "profil" }, ["Fyll inn profilen"])]));
+      return;
+    }
+    lines.forEach(function (l) { box.appendChild(h("p", null, [h("b", null, [l[0]]), l[1]])); });
+    box.appendChild(h("p", { class: "small muted" }, ["Mye av det som trengs for å starte noe, har du kanskje allerede."]));
+  }
+
+  /* ---------- Stjernetegn på idésiden ---------- */
+  function renderIdeaHoro() {
+    var box = $("ide-horo"); box.textContent = "";
+    var s = $("use_horoscope").checked ? zodiac(memberBirth || $("birth_local").value) : null;
+    box.hidden = !s;
+    if (!s) return;
+    box.appendChild(h("h3", null, ["Inspirasjon fra stjernetegnet"]));
+    box.appendChild(h("p", null, [h("span", { class: "tag trad" }, ["Tradisjon og inspirasjon"])]));
+    box.appendChild(h("p", null, [s + ": " + HORO_LINE[s]]));
+    box.appendChild(h("p", { class: "hint" }, ["Brukes bare til refleksjon, aldri som grunnlag for penger, lån eller avtaler."]));
+  }
+
+  /* ---------- Feiring: stille, bare første gang ---------- */
+  var CHEER = {
+    idea: "Idéen din er skrevet ned for første gang. Det er ofte det tyngste steget, og nå har den et sted å vokse.",
+    card: "Det første idékortet ditt er på plass. Tanker som blir skrevet ned, er lettere å bygge videre på."
+  };
+  function cheer(kind) {
+    var k = "minbiz_cheer_" + kind;
+    if (localGet(k)) return;
+    localSet(k, "1");
+    var el = $(currentView === "brainstorm" ? "bs-cheer" : currentView === "profil" ? "profil-cheer" : "idea-cheer");
+    if (el.hidden) el.textContent = "";
+    el.appendChild(h("p", null, [CHEER[kind]]));
+    el.hidden = false;
+  }
+
+  /* ---------- Visningene ---------- */
+  function renderProfileSide() { renderMirror("profil-mirror", false); }
+  function renderProfileView() { applyMode(); renderGuide("profil", false); renderProfileSide(); }
+  function renderIdeaSide() { renderMirror("ide-mirror", true); renderIdeaHoro(); renderExamples(); }
+  function renderIdeaView() { applyMode(); renderGuide("ide", false); renderIdeaCard(); renderIdeaSide(); }
+
+  function wireInspiration() {
+    each(".modebar button", function (b) {
+      b.addEventListener("click", function () {
+        stopMic();
+        localSet("minbiz_mode", b.getAttribute("data-mode"));
+        if (currentView === "profil") renderProfileView(); else renderIdeaView();
+        b.focus();
+      });
+    });
+    each("[data-stuck]", function (b) { b.addEventListener("click", function () { openStuck(b.getAttribute("data-stuck")); }); });
+    ["ambitions", "has_already", "skills", "title", "description", "goal", "audience", "promise"].forEach(function (id) {
+      var el = $(id), mb = micBtn(el);
+      if (mb) el.parentNode.insertBefore(h("div", { class: "microw" }, [mb]), el.nextSibling);
+    });
+    $("profile-form").addEventListener("focusin", function (e) { if (e.target.tagName === "TEXTAREA") lastField.profil = e.target.id; });
+    $("idea-form").addEventListener("focusin", function (e) { if (e.target.tagName === "TEXTAREA" || e.target.id === "title") lastField.ide = e.target.id; });
+    $("profile-form").addEventListener("input", function () { renderMirror("profil-mirror", false); });
+  }
+
   /* ---------- Mine data ---------- */
   async function exportData() {
     try {
@@ -1024,6 +1582,7 @@
       S = { profile: null, ideas: [], plans: [], steps: [], achievements: [] };
       activePlanId = null; chosenType = null;
       store("minbiz_birth_local", null);
+      localSet(GUIDE.profil.key, null); localSet(GUIDE.ide.key, null);
       $("moved-msg").hidden = true; $("celebrate").hidden = true;
       fillProfile(); fillIdea(); renderDash();
       $("delete-msg").textContent = "Alle MinBiz-dataene dine er slettet.";
@@ -1094,6 +1653,7 @@
     $("export").addEventListener("click", exportData);
     $("delete-all").addEventListener("click", deleteAll);
     $("login-form").addEventListener("submit", sendLink);
+    wireInspiration();
     $("logout").addEventListener("click", async function () { try { await sb.auth.signOut(); } catch (e) { /* uansett */ } location.href = "app.html"; });
   }
 

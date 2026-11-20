@@ -8,10 +8,10 @@
 <title>MinBiz-appen: profil, idé og plan</title>
 <meta name="description" content="Logg inn i MinBiz. Fyll inn profil og idé, få en plan med datoer, og følg dagens steg på tavlen.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=2026-11-20">
+<link rel="stylesheet" href="style.css?v=2026-11-20b">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" defer></script>
 <script src="config.js" defer></script>
-<script src="app.js?v=2026-11-20" defer></script>
+<script src="app.js?v=2026-11-20b" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Hopp til innholdet</a>
@@ -123,52 +123,81 @@
     <!-- Profil -->
     <section class="view" id="view-profil" aria-labelledby="h-profil" hidden>
       <h2 id="h-profil">Min profil</h2>
-      <form id="profile-form" class="card" novalidate>
-        <div class="field">
-          <label for="interest-input">Interesser <span class="hint">Skriv én interesse og trykk Legg til.</span></label>
-          <div class="inline-add">
-            <input type="text" id="interest-input" maxlength="60" autocomplete="off">
-            <button type="button" class="btn quiet" id="interest-add">Legg til</button>
-          </div>
-          <ul class="chips" id="interest-list" aria-label="Interessene dine"></ul>
-        </div>
-        <div class="field">
-          <label for="ambitions">Ambisjoner <span class="hint">Hva vil du oppnå? Stort eller lite.</span></label>
-          <textarea id="ambitions" maxlength="2000"></textarea>
-        </div>
-        <div class="field">
-          <label for="hours">Timer per uke <span class="hint">Hvor mange timer har du faktisk i en vanlig uke?</span></label>
-          <input type="number" id="hours" min="0" max="168" step="1" inputmode="numeric">
-        </div>
-        <div class="field">
-          <label for="has_already">Hva jeg har fra før <span class="hint">Utstyr, kunder, nettverk, en nettside, et lokale ...</span></label>
-          <textarea id="has_already" maxlength="2000"></textarea>
-        </div>
-        <div class="field">
-          <label for="skills">Ferdigheter <span class="hint">Hva er du god på?</span></label>
-          <textarea id="skills" maxlength="2000"></textarea>
-        </div>
-        <fieldset>
-          <legend>Stjernetegn</legend>
-          <label class="check"><input type="checkbox" id="use_horoscope"> Vis stjernetegnet mitt som inspirasjon</label>
-          <div id="horo-box" class="stack" hidden>
-            <div id="horo-birth-field" class="field" hidden>
-              <label for="birth_local">Fødselsdato <span class="hint">Brukes bare i denne nettleseren for å finne stjernetegnet. Den sendes ikke til oss.</span></label>
-              <input type="date" id="birth_local">
+      <div class="modebar btnrow" role="group" aria-label="Slik vil jeg fylle inn">
+        <button type="button" class="btn small quiet" data-mode="guide" aria-pressed="true">Ett spørsmål om gangen</button>
+        <button type="button" class="btn small quiet" data-mode="all" aria-pressed="false">Vis alt på én side</button>
+      </div>
+      <div id="profil-cheer" class="note ok cheer" role="status" aria-live="polite" hidden></div>
+      <div class="grid two">
+        <div class="stack">
+          <div id="profil-guide" class="card guide stack"></div>
+          <div id="profil-stuck" class="stuck card stack" hidden></div>
+          <p id="profil-gstatus" class="small" role="status" aria-live="polite"></p>
+          <form id="profile-form" class="card" novalidate>
+            <div class="field">
+              <label for="interest-input">Interesser <span class="hint">Skriv én interesse og trykk Legg til.</span></label>
+              <div class="inline-add">
+                <input type="text" id="interest-input" maxlength="60" autocomplete="off">
+                <button type="button" class="btn quiet" id="interest-add">Legg til</button>
+              </div>
+              <ul class="chips" id="interest-list" aria-label="Interessene dine"></ul>
             </div>
-            <p id="horo-out" aria-live="polite"></p>
-          </div>
-        </fieldset>
-        <div class="btnrow">
-          <button type="submit" class="btn">Lagre profilen</button>
+            <div class="field">
+              <label for="ambitions">Ambisjoner <span class="hint">Hva vil du oppnå? Stort eller lite.</span></label>
+              <textarea id="ambitions" maxlength="2000"></textarea>
+            </div>
+            <div class="field">
+              <label for="hours">Timer per uke <span class="hint">Hvor mange timer har du faktisk i en vanlig uke?</span></label>
+              <input type="number" id="hours" min="0" max="168" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="has_already">Hva jeg har fra før <span class="hint">Utstyr, kunder, nettverk, en nettside, et lokale ...</span></label>
+              <textarea id="has_already" maxlength="2000"></textarea>
+            </div>
+            <div class="field">
+              <label for="skills">Ferdigheter <span class="hint">Hva er du god på?</span></label>
+              <textarea id="skills" maxlength="2000"></textarea>
+            </div>
+            <fieldset>
+              <legend>Stjernetegn</legend>
+              <label class="check"><input type="checkbox" id="use_horoscope"> Vis stjernetegnet mitt som inspirasjon</label>
+              <div id="horo-box" class="stack" hidden>
+                <div id="horo-birth-field" class="field" hidden>
+                  <label for="birth_local">Fødselsdato <span class="hint">Brukes bare i denne nettleseren for å finne stjernetegnet. Den sendes ikke til oss.</span></label>
+                  <input type="date" id="birth_local">
+                </div>
+                <p id="horo-out" aria-live="polite"></p>
+              </div>
+            </fieldset>
+            <div class="btnrow">
+              <button type="submit" class="btn">Lagre profilen</button>
+              <button type="button" class="btn quiet" data-stuck="profil">Jeg står fast</button>
+            </div>
+          </form>
         </div>
-      </form>
+        <div class="stack">
+          <div id="profil-mirror" class="card mirror stack"></div>
+          <div class="note pause stack">
+            <p id="profil-pause"></p>
+            <p><span class="tag soon">Kommer</span> Min dag skal kunne stille deg ett lite spørsmål dagen etter, så tankene får gå videre i ro. Dette er ikke bygget ennå.</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Idé -->
     <section class="view" id="view-ide" aria-labelledby="h-ide" hidden>
       <h2 id="h-ide">Min idé</h2>
+      <div class="modebar btnrow" role="group" aria-label="Slik vil jeg fylle inn">
+        <button type="button" class="btn small quiet" data-mode="guide" aria-pressed="true">Ett spørsmål om gangen</button>
+        <button type="button" class="btn small quiet" data-mode="all" aria-pressed="false">Vis alt på én side</button>
+      </div>
+      <div id="idea-cheer" class="note ok cheer" role="status" aria-live="polite" hidden></div>
       <div class="grid two">
+        <div class="stack">
+        <div id="ide-guide" class="card guide stack"></div>
+        <div id="ide-stuck" class="stuck card stack" hidden></div>
+        <p id="ide-gstatus" class="small" role="status" aria-live="polite"></p>
         <form id="idea-form" class="card" novalidate>
           <div class="field">
             <label for="title">Tittel <span class="hint">Et arbeidsnavn holder.</span></label>
@@ -201,12 +230,23 @@
           <div class="btnrow">
             <button type="submit" class="btn">Lagre idéen</button>
             <button type="button" class="btn quiet" id="to-brainstorm">Neste: brainstorming</button>
+            <button type="button" class="btn quiet" data-stuck="ide">Jeg står fast</button>
           </div>
         </form>
-        <div class="card idea-card stack" aria-labelledby="h-idea-card">
-          <h3 id="h-idea-card">Idékortet ditt</h3>
-          <dl id="idea-card"></dl>
-          <p class="muted small">Tomme felt står som [Mangler] til du fyller dem inn.</p>
+        </div>
+        <div class="stack">
+          <div class="card idea-card stack" aria-labelledby="h-idea-card">
+            <h3 id="h-idea-card">Idékortet ditt</h3>
+            <dl id="idea-card"></dl>
+            <p class="muted small">Tomme felt står som [Mangler] til du fyller dem inn.</p>
+          </div>
+          <div id="ide-mirror" class="card mirror stack"></div>
+          <div id="ide-horo" class="card stack" hidden></div>
+          <div id="ide-examples" class="card stack"></div>
+          <div class="note pause stack">
+            <p id="ide-pause"></p>
+            <p><span class="tag soon">Kommer</span> Min dag skal kunne stille deg ett lite spørsmål dagen etter, så tankene får gå videre i ro. Dette er ikke bygget ennå.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -216,6 +256,7 @@
       <h2 id="h-brainstorm">Brainstorming</h2>
       <div id="bs-needs-idea" class="note warn" hidden>Lagre idéen din først. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
       <div id="bs-body" class="stack">
+        <div id="bs-cheer" class="note ok cheer" role="status" aria-live="polite" hidden></div>
         <p>Skriv korte idékort til spørsmålene under. Alt her er idéer og tanker, ikke fakta. Merk de beste som favoritt. Kortene lagres med en gang.</p>
         <div id="bs-inspo" class="card stack"></div>
         <div id="bs-questions" class="stack"></div>
