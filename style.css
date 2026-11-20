@@ -203,5 +203,55 @@ progress { width: 100%; height: 14px; accent-color: var(--ok); }
 @media print {
   .top, .appnav, footer.foot, .btn, .moves { display: none !important; }
 }
+/* Fremdrift fra idé til plan */
+.flow { margin: 0 0 20px; }
+.flow ol { list-style: none; padding: 0; margin: 0 0 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.flow button {
+  width: 100%; min-height: 48px; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;
+}
+.flow .num { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--muted); font-weight: 700; font-size: .9rem; }
+.flow .lbl, .flow .s { display: none; }
+.flow li.done .num { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.flow li.skipped .num { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); border-style: dashed; }
+.flow li.active .num { border-color: var(--accent); color: var(--accent); }
+.flow button[aria-current="step"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 -3px 0 var(--accent); }
+.flow li.done .s { color: var(--ok); }
+.flow li.skipped .s { color: var(--warn); font-weight: 700; }
+#flow-now { margin: 0; }
+@media (min-width: 720px) {
+  .flow .lbl { display: block; font-weight: 600; font-size: .85rem; line-height: 1.2; overflow-wrap: anywhere; }
+  .flow .s { display: block; font-size: .78rem; color: var(--muted); }
+  .flow button { min-height: 92px; }
+}
+.cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.cards li { display: flex; gap: 8px; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 6px 6px 10px; }
+.cards li.empty { background: transparent; border-style: dashed; padding: 8px 10px; }
+.cards li.fav { border-color: var(--warn); }
+.cards .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.iconbtn { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 1.1rem; min-width: 44px; min-height: 44px; border-radius: 8px; cursor: pointer; }
+.iconbtn:hover { border-color: var(--accent); }
+.iconbtn[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.sugg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sugg button { font: inherit; font-size: .88rem; border: 1px dashed var(--muted); background: transparent; color: var(--ink); border-radius: 99px; padding: 4px 12px; min-height: 36px; cursor: pointer; }
+.sugg button:hover { border-style: solid; }
+.tag.idea { color: var(--accent); background: var(--accent-soft); }
+.tag.ass, .tag.miss { color: var(--warn); background: var(--warn-soft); }
+.areah { display: flex; gap: 8px 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.areah h3 { margin: 0; }
+.linklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.linklist a { display: inline-block; padding: 6px 0; overflow-wrap: anywhere; }
+.finding-form { border-top: 1px solid var(--line); padding-top: 12px; }
+.finding-form .field { margin-bottom: 12px; }
+.finding-form textarea { min-height: 64px; }
+.why { font-size: .92rem; color: var(--muted); margin: 2px 0 0; }
+.toolsteps { padding-left: 1.3em; margin: 0; }
+.toolsteps li + li, .agentlist li + li { margin-top: 10px; }
+.agentlist { list-style: none; padding: 0; margin: 0; }
+.basis { margin: 0; display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: 6px 14px; }
+.basis dt { font-weight: 700; }
+.basis dd { margin: 0; }
+.preview .tag { margin-left: 6px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .btnrow.end { justify-content: flex-end; }

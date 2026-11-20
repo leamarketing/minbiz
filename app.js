@@ -189,8 +189,35 @@
       }
     };
   }
+  /* Eksempeldata for demoen. Funnene er eksempler, ikke ekte undersøkelser. */
+  function demoSeed() {
+    var c = function (q, text, fav) { return { id: uuid(), q: q, text: text, fav: !!fav }; };
+    return {
+      profile: { user_id: "demo", interests: ["Friluftsliv", "Fjorden", "Matlaging"], ambitions: "Ha en ekstra inntekt om sommeren og bli kjent med flere som besøker bygda.", hours_per_week: 8, has_already: "To kajakker, egen bil, bor ved sjøen", skills: "Padling, guiding, lokalkunnskap", use_horoscope: false },
+      ideas: [{
+        id: uuid(), user_id: "demo", created_at: new Date().toISOString(),
+        title: "Kajakkutleie ved fjorden", kind: "ekstra_inntekt",
+        description: "Leie ut kajakker og tilby korte guidede turer om sommeren.",
+        goal: "At de første gjestene vil anbefale turen til andre.", audience: "Turister og hyttefolk som vil ut på fjorden", promise: null,
+        phase: "analyse",
+        brainstorm: { done: true, cards: [
+          c("muligheter", "Guidede kveldsturer i midnattssola", true),
+          c("hvem", "Hyttefolk som har besøk og vil finne på noe"),
+          c("vinkler", "Pakke med kajakk og bålkaffe på en holme", true),
+          c("risiko", "Dårlig vær store deler av sesongen"),
+          c("risiko", "Sikkerhet på sjøen for folk uten erfaring", true),
+          c("styrker", "Kjenner fjorden og strømmene godt")
+        ] },
+        desk_analysis: { keyword: "kajakkutleie", place: "Nordreisa", areas: {
+          marked: [{ id: uuid(), text: "Eksempel: søkeinteressen for kajakk ser ut til å være størst om sommeren.", url: "https://trends.google.com/trends/explore?geo=NO&q=kajakk" }],
+          pris: [{ id: uuid(), text: "Eksempel: tror folk vil betale omtrent som for sykkelutleie.", url: "" }]
+        } }
+      }],
+      plans: [], steps: [], achievements: []
+    };
+  }
   function memDb() {
-    var M = { profile: null, ideas: [], plans: [], steps: [], achievements: [] };
+    var M = demoSeed();
     var now = function () { return new Date().toISOString(); };
     var copy = function (o) { return JSON.parse(JSON.stringify(o)); };
     return {
@@ -199,8 +226,13 @@
       saveProfile: async function (row) { row.user_id = "demo"; row.updated_at = now(); M.profile = copy(row); return copy(row); },
       saveIdea: async function (row) {
         row.user_id = "demo";
-        if (row.id) { M.ideas = M.ideas.map(function (i) { return i.id === row.id ? copy(row) : i; }); return copy(row); }
-        row.id = uuid(); row.created_at = now(); M.ideas.unshift(copy(row)); return copy(row);
+        if (row.id) {
+          var out = null;
+          M.ideas = M.ideas.map(function (i) { if (i.id !== row.id) return i; out = Object.assign({}, i, copy(row)); return out; });
+          return copy(out || row);
+        }
+        row.id = uuid(); row.created_at = now(); row.phase = row.phase || "brainstorm"; row.brainstorm = row.brainstorm || {}; row.desk_analysis = row.desk_analysis || {};
+        M.ideas.unshift(copy(row)); return copy(row);
       },
       createPlan: async function (plan, steps) {
         plan.id = uuid(); plan.user_id = "demo"; plan.created_at = now(); M.plans.unshift(copy(plan));
@@ -232,14 +264,21 @@
   function phaseOf(plan, step) { var t = PLANS[plan.plan_type]; var s = t && t.steps[step.sort]; return s ? s.phase : ""; }
 
   /* ---------- Navigasjon ---------- */
+  var currentView = "dash";
   function show(view) {
+    currentView = view;
+    var navKey = (view === "brainstorm" || view === "analyse" || view === "verktoy") ? "ide" : view;
     Array.prototype.forEach.call(document.querySelectorAll("#appnav button"), function (b) {
-      if (b.getAttribute("data-view") === view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+      if (b.getAttribute("data-view") === navKey) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
     Array.prototype.forEach.call(document.querySelectorAll("#app .view"), function (v) { v.hidden = v.id !== "view-" + view; });
     if (view === "plan") renderPlanForm();
     if (view === "ide") renderIdeaCard();
     if (view === "dash") renderDash();
+    if (view === "brainstorm") renderBrainstorm();
+    if (view === "analyse") renderAnalyse();
+    if (view === "verktoy") renderTools();
+    renderFlow();
     var hd = document.querySelector("#view-" + view + " h2");
     if (hd) { hd.setAttribute("tabindex", "-1"); hd.focus(); }
   }
@@ -326,10 +365,11 @@
     var row = { title: title, description: $("description").value.trim() || null, kind: currentKind(), goal: $("goal").value.trim() || null, audience: $("audience").value.trim() || null, promise: $("promise").value.trim() || null };
     if (cur) row.id = cur.id;
     try {
-      var saved = await db.saveIdea(row);
+      var saved = norm(await db.saveIdea(row));
       if (cur) S.ideas[0] = saved; else S.ideas.unshift(saved);
       chosenType = null;
-      toast("Idéen er lagret. Neste: lag planen.");
+      renderFlow();
+      toast("Idéen er lagret. Neste: brainstorming.");
     } catch (e) { toast("Kunne ikke lagre idéen: " + errText(e)); }
   }
 
@@ -342,21 +382,38 @@
     if (kind === "imperium") return ["30_60_90", "Et stort mål trenger retning for et helt kvartal. Etter 90 dager kan du lage en full forretningsplan."];
     return ["forste_uke", "En idé testes best raskt. «Første uke» viser om den er verdt mer tid."];
   }
-  function buildSteps(type, start) {
-    return PLANS[type].steps.map(function (s, i) {
-      return { sort: i, title: s.t ? s.title + " (kl. " + s.t + ")" : s.title, detail: s.list.join("\n"), due_date: addDays(start, s.d), status: "neste", moved_count: 0, done_at: null };
+  /* Ekstra steg fra Verktøy får negativ sortering, så de kommer først og ikke blandes med malens faser. */
+  function buildSteps(type, start, extras) {
+    extras = extras || [];
+    var pre = extras.map(function (s, idx) {
+      return { sort: idx - extras.length, title: s.title, detail: s.list.join("\n"), due_date: addDays(start, type === "24t" ? 0 : idx), status: "neste", moved_count: 0, done_at: null };
     });
+    return pre.concat(PLANS[type].steps.map(function (s, i) {
+      return { sort: i, title: s.t ? s.title + " (kl. " + s.t + ")" : s.title, detail: s.list.join("\n"), due_date: addDays(start, s.d), status: "neste", moved_count: 0, done_at: null };
+    }));
   }
+  function planExtras() { return usesTools() ? recommend().steps : []; }
   function renderPlanForm() {
     var i = idea();
     $("plan-needs-idea").hidden = !!i;
     $("plan-form").hidden = !i;
     if (!i) return;
-    var sg = suggest();
+    var sg = usesTools() ? (function (r) { return [r.type, r.why]; })(recommend()) : suggest();
     if (!chosenType) chosenType = sg[0];
     var box = $("suggest"); box.textContent = "";
     box.appendChild(h("b", null, ["Forslag: " + PLANS[sg[0]].name + ". "]));
     box.appendChild(document.createTextNode(sg[1] + " Du kan velge en annen under."));
+    var fn = $("plan-flow-note"), b = i.brainstorm, a = i.desk_analysis;
+    var gaps = [];
+    if (!b.done) gaps.push("brainstormingen");
+    if (!a.done) gaps.push("skrivebordsanalysen");
+    fn.textContent = "";
+    if (gaps.length) {
+      fn.appendChild(document.createTextNode("[Mangler] " + gaps.join(" og ") + ". Planen kan lages likevel. Den blir bedre når du har vært gjennom "));
+      fn.appendChild(h("button", { type: "button", class: "linkish", "data-goto": b.done ? "analyse" : "brainstorm" }, [b.done ? "skrivebordsanalysen" : "brainstormingen"]));
+      fn.appendChild(document.createTextNode(" og verktøyene."));
+      fn.hidden = false;
+    } else fn.hidden = true;
     var wrap = $("ptypes"); wrap.textContent = "";
     PLAN_ORDER.forEach(function (k) {
       var p = PLANS[k];
@@ -371,24 +428,29 @@
   function renderPreview() {
     var ol = $("preview"); ol.textContent = "";
     var start = $("start_date").value || today();
-    buildSteps(chosenType, start).forEach(function (s) {
-      ol.appendChild(h("li", null, [h("b", null, [s.title]), " ", h("span", { class: "muted small" }, [fmtDate(s.due_date)])]));
+    buildSteps(chosenType, start, planExtras()).forEach(function (s) {
+      ol.appendChild(h("li", null, [h("b", null, [s.title]), " ", h("span", { class: "muted small" }, [fmtDate(s.due_date)]), s.sort < 0 ? h("span", { class: "tag idea" }, ["Fra Verktøy"]) : null]));
     });
   }
-  async function createPlan(ev) {
-    ev.preventDefault();
-    var i = idea(); if (!i) return;
-    var start = $("start_date").value || today();
-    var btn = $("plan-btn"); btn.disabled = true;
+  async function makePlan(type, start) {
+    var i = idea(); if (!i) return false;
+    var tools = usesTools();
     try {
-      var res = await db.createPlan({ idea_id: i.id, plan_type: chosenType, start_date: start }, buildSteps(chosenType, start));
+      var res = await db.createPlan({ idea_id: i.id, plan_type: type, start_date: start }, buildSteps(type, start, planExtras()));
       S.plans.unshift(res.plan); S.steps = S.steps.concat(res.steps);
       activePlanId = res.plan.id;
       $("celebrate").hidden = true;
+      if (tools) await saveFlow({ phase: "plan" });
       await autoMove();
       toast("Planen er laget.");
       show("dash");
-    } catch (e) { toast("Kunne ikke lage planen: " + errText(e)); }
+      return true;
+    } catch (e) { toast("Kunne ikke lage planen: " + errText(e)); return false; }
+  }
+  async function createPlan(ev) {
+    ev.preventDefault();
+    var btn = $("plan-btn"); btn.disabled = true;
+    await makePlan(chosenType, $("start_date").value || today());
     btn.disabled = false;
   }
 
@@ -561,6 +623,388 @@
     renderSupport(plan);
   }
 
+  /* ---------- Fremdrift: Min idé, Brainstorming, Skrivebordsanalyse, Verktøy, Plan ---------- */
+  var PHASES = ["brainstorm", "analyse", "verktoy", "plan"];
+  var FLOW = [
+    { view: "ide", name: "Min idé" },
+    { view: "brainstorm", name: "Brainstorming" },
+    { view: "analyse", name: "Skrivebordsanalyse" },
+    { view: "verktoy", name: "Verktøy" },
+    { view: "plan", name: "Plan" }
+  ];
+  var FLOW_LABEL = { done: "Ferdig", skipped: "[Mangler]", active: "Påbegynt", todo: "Ikke startet", locked: "Lagre idéen først" };
+
+  function norm(i) {
+    if (!i) return i;
+    var b = i.brainstorm && typeof i.brainstorm === "object" ? i.brainstorm : {};
+    if (!Array.isArray(b.cards)) b.cards = [];
+    i.brainstorm = b;
+    var a = i.desk_analysis && typeof i.desk_analysis === "object" ? i.desk_analysis : {};
+    if (!a.areas || typeof a.areas !== "object") a.areas = {};
+    AREAS.forEach(function (x) { if (!Array.isArray(a.areas[x.k])) a.areas[x.k] = []; });
+    i.desk_analysis = a;
+    if (PHASES.indexOf(i.phase) === -1) i.phase = "brainstorm";
+    return i;
+  }
+  function usesTools() { var i = idea(); return !!i && PHASES.indexOf(i.phase) >= 2; }
+  function hasPlanFor(i) { return !!i && S.plans.some(function (p) { return p.idea_id === i.id; }); }
+
+  async function saveFlow(fields) {
+    var i = idea(); if (!i) return false;
+    var row = { id: i.id };
+    Object.keys(fields).forEach(function (k) { row[k] = JSON.parse(JSON.stringify(fields[k])); });
+    try {
+      var saved = norm(await db.saveIdea(row));
+      S.ideas[0] = saved;
+      chosenType = null;
+      renderFlow();
+      return true;
+    } catch (e) { toast("Kunne ikke lagre: " + errText(e)); return false; }
+  }
+  function phaseAtLeast(p) {
+    var i = idea(); if (!i) return {};
+    return PHASES.indexOf(i.phase) < PHASES.indexOf(p) ? { phase: p } : {};
+  }
+
+  function flowStatus() {
+    var i = idea(), st = {};
+    st.ide = i ? "done" : "todo";
+    if (!i) { st.brainstorm = st.analyse = st.verktoy = st.plan = "locked"; return st; }
+    var b = i.brainstorm, a = i.desk_analysis;
+    st.brainstorm = b.skipped ? "skipped" : b.done ? "done" : b.cards.length ? "active" : "todo";
+    var nf = AREAS.reduce(function (n, x) { return n + a.areas[x.k].length; }, 0);
+    st.analyse = a.skipped ? "skipped" : a.done ? "done" : nf ? "active" : "todo";
+    var hp = hasPlanFor(i);
+    st.verktoy = (i.phase === "plan" || hp) ? "done" : i.phase === "verktoy" ? "active" : "todo";
+    st.plan = hp ? "done" : "todo";
+    return st;
+  }
+  function renderFlow() {
+    var nav = $("flow");
+    var inFlow = FLOW.some(function (f) { return f.view === currentView; });
+    nav.hidden = !inFlow;
+    if (!inFlow) return;
+    var st = flowStatus(), ol = $("flow-steps"); ol.textContent = "";
+    FLOW.forEach(function (f, n) {
+      var s = st[f.view], cur = f.view === currentView;
+      var btn = h("button", { type: "button", "data-goto": f.view, "aria-current": cur ? "step" : null, "aria-label": "Steg " + (n + 1) + ": " + f.name + ", " + FLOW_LABEL[s] }, [
+        h("span", { class: "num", "aria-hidden": "true" }, [s === "done" ? "✓" : s === "skipped" ? "!" : String(n + 1)]),
+        h("span", { class: "lbl", "aria-hidden": "true" }, [f.name]),
+        h("span", { class: "s", "aria-hidden": "true" }, [FLOW_LABEL[s]])
+      ]);
+      ol.appendChild(h("li", { class: s }, [btn]));
+    });
+    var idx = 0; FLOW.forEach(function (f, n) { if (f.view === currentView) idx = n; });
+    $("flow-now").textContent = "Steg " + (idx + 1) + " av 5: " + FLOW[idx].name + ". " + FLOW_LABEL[st[FLOW[idx].view]] + ".";
+  }
+
+  /* ---------- Brainstorming ---------- */
+  var QUESTIONS = [
+    { k: "muligheter", q: "Hvilke muligheter ser du?", hint: "Hva kan idéen bli til? Én mulighet per kort." },
+    { k: "hvem", q: "Hvem kan dette hjelpe?", hint: "Tenk på konkrete personer eller grupper." },
+    { k: "vinkler", q: "Hvilke andre vinkler finnes?", hint: "Som tjeneste, som produkt, digitalt eller lokalt." },
+    { k: "risiko", q: "Hva kan gå galt?", hint: "Lurt å tenke på før du setter i gang." },
+    { k: "styrker", q: "Hva er du god på som passer her?", hint: "Ferdigheter, erfaring, utstyr eller nettverk." }
+  ];
+  function splitList(t) { return String(t || "").split(/[,;\n]+/).map(function (x) { x = x.trim(); return x.charAt(0).toUpperCase() + x.slice(1); }).filter(function (x) { return x && x.length <= 80; }); }
+  function suggestionsFor(k) {
+    var p = S.profile || {}, i = idea() || {};
+    if (k === "muligheter") return (p.interests || []).slice(0, 4).map(function (t) { return "Koble idéen med " + t.toLowerCase(); });
+    if (k === "hvem") return (missing(i.audience) ? [] : [String(i.audience).trim().slice(0, 80)]).concat(["Folk i nærmiljøet ditt"]);
+    if (k === "vinkler") return ["Som tjeneste", "Som produkt", "Digitalt, på nett", "Lokalt, der du bor"];
+    if (k === "risiko") return ["For lite tid i hverdagen", "Ingen vil betale prisen", "Regler jeg ikke kjenner"];
+    if (k === "styrker") return splitList(p.skills).concat(splitList(p.has_already)).slice(0, 6);
+    return [];
+  }
+  function renderBrainstorm() {
+    var i = idea();
+    $("bs-needs-idea").hidden = !!i; $("bs-body").hidden = !i;
+    if (!i) return;
+    var p = S.profile || {};
+    var ins = $("bs-inspo"); ins.textContent = "";
+    ins.appendChild(h("h3", null, ["Fra profilen din"]));
+    if (missing(p.ambitions) && !(p.interests || []).length) {
+      ins.appendChild(h("p", { class: "small" }, ["Profilen din er tom. ", h("button", { type: "button", class: "linkish", "data-goto": "profil" }, ["Fyll inn interesser og ambisjoner"]), " for å få forslag her."]));
+    } else {
+      ins.appendChild(h("p", { class: "small" }, [h("b", null, ["Ambisjoner: "]), missing(p.ambitions) ? h("span", { class: "missing" }, ["[Mangler]"]) : String(p.ambitions).trim()]));
+      ins.appendChild(h("p", { class: "small" }, [h("b", null, ["Interesser: "]), (p.interests || []).length ? p.interests.join(", ") : h("span", { class: "missing" }, ["[Mangler]"])]));
+      ins.appendChild(h("p", { class: "muted small" }, ["Trykk på et forslag under et spørsmål for å bruke det som utgangspunkt."]));
+    }
+    var wrap = $("bs-questions"); wrap.textContent = "";
+    QUESTIONS.forEach(function (Q) { wrap.appendChild(questionBlock(Q)); });
+  }
+  function questionBlock(Q) {
+    var i = idea(), b = i.brainstorm;
+    var inId = "bs-in-" + Q.k, hId = "bs-h-" + Q.k;
+    var sec = h("section", { class: "card stack", "aria-labelledby": hId });
+    sec.appendChild(h("h3", { id: hId }, [Q.q]));
+    var list = h("ul", { class: "cards", "aria-label": "Idékort: " + Q.q });
+    var mine = b.cards.filter(function (c) { return c.q === Q.k; });
+    if (!mine.length) list.appendChild(h("li", { class: "empty muted small" }, ["Ingen kort ennå."]));
+    mine.forEach(function (c) {
+      list.appendChild(h("li", { class: c.fav ? "fav" : null }, [
+        h("span", { class: "tag idea" }, ["Idé"]),
+        h("span", { class: "txt" }, [c.text]),
+        h("button", { type: "button", class: "iconbtn", "data-fav": c.id, "aria-pressed": c.fav ? "true" : "false", "aria-label": "Favoritt: " + c.text, title: "Favoritt", onclick: function () { toggleFav(c.id, Q.k); } }, [c.fav ? "★" : "☆"]),
+        h("button", { type: "button", class: "iconbtn", "aria-label": "Slett: " + c.text, title: "Slett", onclick: function () { deleteCard(c.id, Q.k); } }, ["×"])
+      ]));
+    });
+    sec.appendChild(list);
+    var inp = h("input", { type: "text", id: inId, maxlength: "200", autocomplete: "off" });
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); addCard(Q.k); } });
+    sec.appendChild(h("div", { class: "field" }, [
+      h("label", { for: inId }, ["Nytt idékort ", h("span", { class: "hint" }, [Q.hint])]),
+      h("div", { class: "inline-add" }, [inp, h("button", { type: "button", class: "btn quiet", onclick: function () { addCard(Q.k); } }, ["Legg til"])])
+    ]));
+    var sg = suggestionsFor(Q.k);
+    if (sg.length) {
+      sec.appendChild(h("div", { class: "sugg", role: "group", "aria-label": "Forslag til " + Q.q }, [h("span", { class: "muted small" }, ["Forslag:"])].concat(sg.map(function (t) {
+        return h("button", { type: "button", onclick: function () { var el = $(inId); el.value = t; el.focus(); } }, [t]);
+      }))));
+    }
+    return sec;
+  }
+  async function addCard(k) {
+    var el = $("bs-in-" + k), v = el.value.trim();
+    if (!v) { el.focus(); return; }
+    var b = JSON.parse(JSON.stringify(idea().brainstorm));
+    if (b.cards.length >= 100) { toast("Du har 100 kort. Slett noen før du legger til flere."); return; }
+    b.cards.push({ id: uuid(), q: k, text: v.slice(0, 200), fav: false });
+    if (await saveFlow({ brainstorm: b })) { renderBrainstorm(); var n = $("bs-in-" + k); if (n) n.focus(); }
+  }
+  async function toggleFav(id, k) {
+    var b = JSON.parse(JSON.stringify(idea().brainstorm));
+    b.cards.forEach(function (c) { if (c.id === id) c.fav = !c.fav; });
+    if (await saveFlow({ brainstorm: b })) {
+      renderBrainstorm();
+      var btn = document.querySelector('[data-fav="' + id + '"]');
+      if (btn) btn.focus();
+    }
+  }
+  async function deleteCard(id, k) {
+    var b = JSON.parse(JSON.stringify(idea().brainstorm));
+    b.cards = b.cards.filter(function (c) { return c.id !== id; });
+    if (await saveFlow({ brainstorm: b })) { renderBrainstorm(); var n = $("bs-in-" + k); if (n) n.focus(); toast("Kortet er slettet."); }
+  }
+  async function finishBrainstorm(skip) {
+    var b = JSON.parse(JSON.stringify(idea().brainstorm));
+    b.done = !skip; b.skipped = !!skip;
+    if (await saveFlow(Object.assign({ brainstorm: b }, phaseAtLeast("analyse")))) {
+      toast(skip ? "Brainstormingen er hoppet over og merket [Mangler]." : "Brainstormingen er lagret.");
+      show("analyse");
+    }
+  }
+
+  /* ---------- Skrivebordsanalyse ---------- */
+  function enc(s) { return encodeURIComponent(s); }
+  function g(q) { return "https://www.google.com/search?q=" + enc(q); }
+  var AREAS = [
+    { k: "marked", name: "Marked og etterspørsel", ask: "Søker folk etter dette, og øker eller synker interessen?", links: function (kw, pl) { return [
+      ["Google Trends: interessen for «" + kw + "» i Norge over tid", "https://trends.google.com/trends/explore?geo=NO&q=" + enc(kw)],
+      ["Google-søk: «" + kw + "»" + (pl ? " i " + pl : ""), g(kw + (pl ? " " + pl : ""))],
+      ["SSB: søk i statistikken etter «" + kw + "»", "https://www.ssb.no/sok?sok=" + enc(kw)],
+      ["SSB: statistikk om nye foretak i Norge", "https://www.ssb.no/virksomheter-foretak-og-regnskap/virksomheter-og-foretak/statistikk/foretak"]
+    ]; } },
+    { k: "malgruppe", name: "Målgruppe", ask: "Hvem er kundene, hvor mange er de, og hva spør de om?", links: function (kw, pl) { return [
+      ["SSB Kommunefakta: befolkning og nøkkeltall" + (pl ? " (velg " + pl + ")" : ""), "https://www.ssb.no/kommunefakta"],
+      ["SSB Statistikkbanken", "https://www.ssb.no/statbank/"],
+      ["Google-søk: hva folk spør om «" + kw + "»", g(kw + " spørsmål erfaringer")]
+    ]; } },
+    { k: "konkurrenter", name: "Konkurrenter", ask: "Hvem tilbyr noe lignende i dag, og hva lover de?", links: function (kw, pl) { return [
+      ["Google-søk: «" + kw + "»" + (pl ? " i " + pl : ""), g(kw + (pl ? " " + pl : ""))],
+      ["Google Maps: «" + kw + "»" + (pl ? " i " + pl : ""), "https://www.google.com/maps/search/" + enc(kw + (pl ? " " + pl : ""))],
+      ["Enhetsregisteret: søk etter virksomheter med «" + kw + "» i navnet", "https://virksomhet.brreg.no/nb/oppslag/enheter?navn=" + enc(kw)],
+      ["Finn.no: lignende tilbud", "https://www.finn.no/recommerce/forsale/search?q=" + enc(kw)]
+    ]; } },
+    { k: "regler", name: "Regler og registrering", ask: "Må du registrere noe, og finnes det egne regler for dette?", links: function (kw) { return [
+      ["Altinn: starte og drive bedrift", "https://info.altinn.no/starte-og-drive/"],
+      ["Altinn: søk etter «" + kw + "»", "https://info.altinn.no/sok/?q=" + enc(kw)],
+      ["Brønnøysundregistrene", "https://www.brreg.no/"],
+      ["Skatteetaten: bedrift og organisasjon", "https://www.skatteetaten.no/bedrift-og-organisasjon/"]
+    ]; } },
+    { k: "pris", name: "Pris og økonomi", ask: "Hva tar andre betalt, og hva koster det deg å levere?", links: function (kw) { return [
+      ["Google-søk: «" + kw + " pris»", g(kw + " pris")],
+      ["Finn.no: priser på lignende", "https://www.finn.no/recommerce/forsale/search?q=" + enc(kw)],
+      ["Skatteetaten: merverdiavgift", "https://www.skatteetaten.no/bedrift-og-organisasjon/avgifter/mva/"],
+      ["Innovasjon Norge: starte bedrift", "https://www.innovasjonnorge.no/seksjon/starte"]
+    ]; } }
+  ];
+  function isUrl(u) { return /^https?:\/\/[^\s]+\.[^\s]+/i.test(String(u || "").trim()); }
+  function investigated(k) { var i = idea(); return !!i && i.desk_analysis.areas[k].some(function (f) { return isUrl(f.url); }); }
+  function keyword() { var a = idea().desk_analysis; return (a.keyword && String(a.keyword).trim()) || idea().title; }
+  function place() { var a = idea().desk_analysis; return (a.place && String(a.place).trim()) || ""; }
+  function areaState(k) {
+    var f = idea().desk_analysis.areas[k];
+    if (f.some(function (x) { return isUrl(x.url); })) return ["ok", "Undersøkt med kilde"];
+    if (f.length) return ["ass", "Bare antakelser"];
+    return ["miss", "[Mangler]"];
+  }
+  function renderAnalyse() {
+    var i = idea();
+    $("an-needs-idea").hidden = !!i; $("an-body").hidden = !i;
+    if (!i) return;
+    $("an-keyword").value = keyword();
+    $("an-place").value = place();
+    renderAreas();
+  }
+  function renderAreas(clearKey) {
+    var wrap = $("an-areas"), keep = {};
+    Array.prototype.forEach.call(wrap.querySelectorAll("textarea, input"), function (el) { keep[el.id] = el.value; });
+    if (clearKey) { delete keep["an-t-" + clearKey]; delete keep["an-u-" + clearKey]; }
+    wrap.textContent = "";
+    setTimeout(function () { Object.keys(keep).forEach(function (id) { var el = $(id); if (el && keep[id]) el.value = keep[id]; }); }, 0);
+    var kw = $("an-keyword").value.trim() || idea().title, pl = $("an-place").value.trim();
+    AREAS.forEach(function (A) {
+      var hid = "an-h-" + A.k, stt = areaState(A.k);
+      var sec = h("section", { class: "card stack area", "aria-labelledby": hid });
+      sec.appendChild(h("div", { class: "areah" }, [h("h3", { id: hid }, [A.name]), h("span", { class: "tag " + (stt[0] === "ok" ? "ok" : stt[0] === "ass" ? "ass" : "miss") }, [stt[1]])]));
+      sec.appendChild(h("p", { class: "small" }, [A.ask]));
+      sec.appendChild(h("p", { class: "small muted" }, ["Ferdige søk i åpne kilder:"]));
+      sec.appendChild(linkList(A, kw, pl));
+      var fl = h("ul", { class: "cards", "aria-label": "Funn: " + A.name });
+      var fs = idea().desk_analysis.areas[A.k];
+      if (!fs.length) fl.appendChild(h("li", { class: "empty muted small" }, ["Ingen funn ennå."]));
+      fs.forEach(function (f) {
+        var src = isUrl(f.url)
+          ? h("span", { class: "small" }, ["Kilde: ", h("a", { href: f.url.trim(), target: "_blank", rel: "noopener noreferrer" }, [shortUrl(f.url), h("span", { class: "sr-only" }, [" (åpnes i ny fane)"])])])
+          : h("span", { class: "tag ass" }, ["[Antakelse]"]);
+        fl.appendChild(h("li", null, [h("span", { class: "txt" }, [f.text, h("br"), src]),
+          h("button", { type: "button", class: "iconbtn", "aria-label": "Slett funn: " + f.text, title: "Slett", onclick: function () { deleteFinding(A.k, f.id); } }, ["×"])]));
+      });
+      sec.appendChild(fl);
+      var tId = "an-t-" + A.k, uId = "an-u-" + A.k, eId = "an-e-" + A.k;
+      sec.appendChild(h("div", { class: "finding-form" }, [
+        h("div", { class: "field" }, [h("label", { for: tId }, ["Hva fant du?"]), h("textarea", { id: tId, maxlength: "500", rows: "2" })]),
+        h("div", { class: "field" }, [h("label", { for: uId }, ["Kilde (adresse) ", h("span", { class: "hint" }, ["Lim inn adressen der du fant det. Uten adresse merkes funnet [Antakelse]."])]), h("input", { type: "url", id: uId, inputmode: "url", maxlength: "500", autocomplete: "off", placeholder: "https://" })]),
+        h("p", { id: eId, class: "missing small", role: "alert" }),
+        h("div", { class: "btnrow" }, [h("button", { type: "button", class: "btn quiet", onclick: function () { addFinding(A.k); } }, ["Legg til funn"])])
+      ]));
+      wrap.appendChild(sec);
+    });
+  }
+  function linkList(A, kw, pl) {
+    return h("ul", { class: "linklist", id: "an-l-" + A.k }, A.links(kw, pl).map(function (L) {
+      return h("li", null, [h("a", { href: L[1], target: "_blank", rel: "noopener noreferrer" }, [L[0], h("span", { class: "sr-only" }, [" (åpnes i ny fane)"])])]);
+    }));
+  }
+  /* Oppdaterer bare søkelenkene, så halvskrevne funn ikke forsvinner. */
+  function renderAreasKeepFocus() {
+    var kw = $("an-keyword").value.trim() || idea().title, pl = $("an-place").value.trim();
+    AREAS.forEach(function (A) { var old = $("an-l-" + A.k); if (old) old.parentNode.replaceChild(linkList(A, kw, pl), old); });
+  }
+  function shortUrl(u) { try { var x = new URL(u.trim()); return x.hostname.replace(/^www\./, "") + (x.pathname.length > 1 ? x.pathname.slice(0, 30) + (x.pathname.length > 30 ? "..." : "") : ""); } catch (e) { return u; } }
+  async function addFinding(k) {
+    var t = $("an-t-" + k), u = $("an-u-" + k), err = $("an-e-" + k);
+    var text = t.value.trim(), url = u.value.trim();
+    err.textContent = "";
+    if (!text) { err.textContent = "Skriv hva du fant."; t.focus(); return; }
+    if (url && !isUrl(url)) { err.textContent = "Adressen må starte med https:// eller http://. La feltet stå tomt hvis du ikke har en kilde."; u.focus(); return; }
+    var a = JSON.parse(JSON.stringify(idea().desk_analysis));
+    if (a.areas[k].length >= 50) { err.textContent = "Du har 50 funn her. Slett noen før du legger til flere."; return; }
+    a.areas[k].push({ id: uuid(), text: text.slice(0, 500), url: url });
+    a.keyword = $("an-keyword").value.trim() || null; a.place = $("an-place").value.trim() || null;
+    if (await saveFlow({ desk_analysis: a })) { renderAreas(k); var n = $("an-t-" + k); if (n) n.focus(); toast(url ? "Funnet er lagret med kilde." : "Funnet er lagret og merket [Antakelse]."); }
+  }
+  async function deleteFinding(k, id) {
+    var a = JSON.parse(JSON.stringify(idea().desk_analysis));
+    a.areas[k] = a.areas[k].filter(function (f) { return f.id !== id; });
+    if (await saveFlow({ desk_analysis: a })) { renderAreas(); var n = $("an-t-" + k); if (n) n.focus(); toast("Funnet er slettet."); }
+  }
+  async function saveSearchTerms() {
+    var a = JSON.parse(JSON.stringify(idea().desk_analysis));
+    a.keyword = $("an-keyword").value.trim() || null; a.place = $("an-place").value.trim() || null;
+    await saveFlow({ desk_analysis: a });
+  }
+  async function finishAnalyse(skip) {
+    var a = JSON.parse(JSON.stringify(idea().desk_analysis));
+    a.done = !skip; a.skipped = !!skip;
+    a.keyword = $("an-keyword").value.trim() || null; a.place = $("an-place").value.trim() || null;
+    if (await saveFlow(Object.assign({ desk_analysis: a }, phaseAtLeast("verktoy")))) {
+      toast(skip ? "Analysen er hoppet over og merket [Mangler]." : "Analysen er lagret.");
+      show("verktoy");
+    }
+  }
+
+  /* ---------- Verktøy: regelbasert anbefaling ---------- */
+  function recommend() {
+    var i = idea(), b = i.brainstorm;
+    var base = suggest(), type = base[0], why = base[1];
+    var covered = AREAS.filter(function (x) { return investigated(x.k); }).length;
+    if (covered < 2 && (type === "6_uker" || type === "30_60_90")) {
+      why = "Færre enn to av de fem områdene i analysen har funn med kilde. «Første uke» tester idéen raskt før du bruker mye tid og penger. Etterpå passer «" + PLANS[type].name + "».";
+      type = "forste_uke";
+    }
+    var steps = [];
+    if (!investigated("malgruppe")) steps.push({ title: "Snakk med fem mulige kunder", list: ["Spør hva de bruker i dag", "Spør hva som er vanskelig for dem", "Skriv ned ordene de bruker"], why: "Målgruppen har ingen funn med kilde ennå. Samtaler gir svar du ikke finner i statistikken." });
+    if (!investigated("konkurrenter")) steps.push({ title: "Se på tre konkurrenter", list: ["Finn tre som tilbyr noe lignende", "Noter hva de lover og hva de tar betalt", "Skriv ned hvor du fant det"], why: "Konkurrentene er ikke undersøkt med kilde." });
+    if (!investigated("regler")) steps.push({ title: "Sjekk registrering i Altinn", list: ["Les «Starte og drive» på info.altinn.no", "Finn ut om du må registrere deg i Enhetsregisteret", "Skriv ned spørsmål til regnskapsfører"], why: "Regler og registrering er ikke sjekket." });
+    if (!investigated("marked")) steps.push({ title: "Finn ut om noen etterspør dette", list: ["Se på søkeordet ditt i Google Trends", "Spør fem i nettverket om de ville brukt det"], why: "Marked og etterspørsel har ingen funn med kilde." });
+    if (!investigated("pris")) steps.push({ title: "Sett en foreløpig pris", list: ["Se hva andre tar for noe lignende", "Regn på hva det koster deg å levere", "Merk prisen som foreløpig"], why: "Pris og økonomi er ikke undersøkt med kilde." });
+    var risks = b.cards.filter(function (c) { return c.q === "risiko"; }).sort(function (x, y) { return (y.fav ? 1 : 0) - (x.fav ? 1 : 0); });
+    if (risks.length) steps.push({ title: "Bestem hva du gjør hvis noe går galt", list: risks.slice(0, 3).map(function (c) { return "Hvis: " + c.text; }), why: "Du skrev ned risikoer i brainstormingen. En kort plan for dem gjør starten tryggere." });
+    var agents = [{ name: "Planlederen", why: "Holder oversikt over planen og foreslår neste steg. Bestemmer aldri for deg." }];
+    if (!investigated("marked") || !investigated("konkurrenter") || !investigated("malgruppe")) agents.push({ name: "Markedsforskeren", why: "Kan finne fakta om marked, målgruppe og konkurrenter i åpne kilder, med kilde på hvert funn." });
+    if (!investigated("regler")) agents.push({ name: "Forretningsjuristen", why: "Kan forklare registrering og regler med lenke til lovteksten, og si når du bør snakke med en fagperson." });
+    if (!investigated("pris")) agents.push({ name: "Økonomen", why: "Kan regne på pris og budsjett med dine egne tall." });
+    if (missing(i.promise)) agents.push({ name: "Tekstskriveren", why: "Løftet ditt mangler. Tekstskriveren kan foreslå det, og du godkjenner." });
+    agents.push({ name: "Coachen", why: "Følger opp og feirer når du når et mål. Uten press." });
+    return { type: type, why: why, steps: steps, agents: agents, covered: covered };
+  }
+  function renderTools() {
+    var i = idea();
+    $("vt-needs-idea").hidden = !!i;
+    var body = $("vt-body"); body.textContent = ""; body.hidden = !i;
+    if (!i) return;
+    if (PHASES.indexOf(i.phase) < 2) saveFlow({ phase: "verktoy" });
+    var b = i.brainstorm, a = i.desk_analysis, r = recommend();
+    var favs = b.cards.filter(function (c) { return c.fav; });
+
+    body.appendChild(h("p", null, ["MinBiz har sett på idéen, brainstormingen og analysen din. Her er verktøyene som passer nå, og hvorfor."]));
+    var basis = h("div", { class: "card stack" }, [h("h3", null, ["Grunnlaget"])]);
+    var dl = h("dl", { class: "basis" });
+    dl.appendChild(h("dt", null, ["Brainstorming"]));
+    dl.appendChild(b.skipped ? h("dd", { class: "missing" }, ["[Mangler] Hoppet over."]) : h("dd", null, [b.cards.length + " idékort, " + favs.length + " favoritter" + (b.done ? "." : ". Ikke merket som ferdig.")]));
+    dl.appendChild(h("dt", null, ["Skrivebordsanalyse"]));
+    dl.appendChild(a.skipped ? h("dd", { class: "missing" }, ["[Mangler] Hoppet over."]) : h("dd", null, [r.covered + " av 5 områder har funn med kilde" + (a.done ? "." : ". Ikke merket som ferdig.")]));
+    basis.appendChild(dl);
+    if (favs.length) {
+      basis.appendChild(h("p", { class: "small" }, [h("b", null, ["Favorittene dine:"])]));
+      basis.appendChild(h("ul", { class: "small" }, favs.slice(0, 6).map(function (c) { return h("li", null, [c.text, " ", h("span", { class: "tag idea" }, ["Idé"])]); })));
+    }
+    body.appendChild(basis);
+
+    var pt = PLANS[r.type];
+    body.appendChild(h("div", { class: "card stack" }, [
+      h("h3", null, ["Anbefalt plan: " + pt.name]),
+      h("p", { class: "muted small" }, [pt.len + ". " + pt.fits]),
+      h("p", { class: "why" }, [h("b", null, ["Hvorfor: "]), r.why])
+    ]));
+
+    var sc = h("div", { class: "card stack" }, [h("h3", null, ["Steg som legges først i planen"])]);
+    if (!r.steps.length) sc.appendChild(h("p", null, ["Ingen ekstra steg. Alle fem områdene har funn med kilde, og du har ingen risikokort."]));
+    else sc.appendChild(h("ol", { class: "toolsteps" }, r.steps.map(function (s) {
+      return h("li", null, [h("b", null, [s.title]), h("ul", { class: "small" }, s.list.map(function (x) { return h("li", null, [x]); })), h("p", { class: "why" }, [h("b", null, ["Hvorfor: "]), s.why])]);
+    })));
+    body.appendChild(sc);
+
+    body.appendChild(h("div", { class: "card stack" }, [
+      h("h3", null, ["Agenter som kan hjelpe senere"]),
+      h("p", { class: "small muted" }, ["Agentene er ikke bygget ennå. De viser hva som kommer, og hvorfor de passer for deg."]),
+      h("ul", { class: "agentlist" }, r.agents.map(function (ag) {
+        return h("li", null, [h("b", null, [ag.name]), " ", h("span", { class: "tag soon" }, ["Kommer"]), h("p", { class: "why" }, [ag.why])]);
+      }))
+    ]));
+
+    var mk = h("button", { type: "button", class: "btn", onclick: async function () {
+      mk.disabled = true;
+      chosenType = r.type;
+      await makePlan(r.type, today());
+      mk.disabled = false;
+    } }, ["Lag planen"]);
+    body.appendChild(h("div", { class: "btnrow" }, [mk, h("button", { type: "button", class: "btn quiet", "data-goto": "plan" }, ["Velg plantype og dato selv"])]));
+    body.appendChild(h("p", { class: "muted small" }, ["«Lag planen» bruker anbefalt plantype med start i dag. MinBiz gir ikke skatte-, juridiske eller investeringsråd."]));
+  }
+
   /* ---------- Mine data ---------- */
   async function exportData() {
     try {
@@ -591,6 +1035,7 @@
     $("loading").hidden = true; $("login").hidden = true; $("app").hidden = false;
     $("who").textContent = label;
     S = await db.load();
+    S.ideas.forEach(norm);
     var m = await db.member();
     memberBirth = m && m.birth_date ? m.birth_date : null;
     fillProfile(); fillIdea();
@@ -632,6 +1077,18 @@
     $("idea-form").addEventListener("input", renderIdeaCard);
     $("idea-form").addEventListener("change", renderIdeaCard);
     $("plan-form").addEventListener("submit", createPlan);
+    $("to-brainstorm").addEventListener("click", function () {
+      if (!idea()) { $("idea-err").textContent = "Lagre idéen først. En tittel holder."; $("title").focus(); return; }
+      show("brainstorm");
+    });
+    $("bs-done").addEventListener("click", function () { finishBrainstorm(false); });
+    $("bs-skip").addEventListener("click", function () { finishBrainstorm(true); });
+    $("an-done").addEventListener("click", function () { finishAnalyse(false); });
+    $("an-skip").addEventListener("click", function () { finishAnalyse(true); });
+    $("an-keyword").addEventListener("input", renderAreasKeepFocus);
+    $("an-place").addEventListener("input", renderAreasKeepFocus);
+    $("an-keyword").addEventListener("change", saveSearchTerms);
+    $("an-place").addEventListener("change", saveSearchTerms);
     $("start_date").addEventListener("change", renderPreview);
     $("plan-pick").addEventListener("change", function () { activePlanId = this.value; $("celebrate").hidden = true; renderDash(); });
     $("export").addEventListener("click", exportData);

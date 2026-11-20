@@ -8,15 +8,15 @@
 <title>MinBiz-appen: profil, idé og plan</title>
 <meta name="description" content="Logg inn i MinBiz. Fyll inn profil og idé, få en plan med datoer, og følg dagens steg på tavlen.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2026-11-20">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" defer></script>
 <script src="config.js" defer></script>
-<script src="app.js" defer></script>
+<script src="app.js?v=2026-11-20" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Hopp til innholdet</a>
 <div class="demo-bar" id="demo-bar" hidden>
-  <div class="wrap"><span class="tag demo">Demo</span> Du prøver MinBiz uten konto. Ingenting lagres, og alt forsvinner når du lukker siden. <a href="app.html">Logg inn for å lagre</a>.</div>
+  <div class="wrap"><span class="tag demo">Demo</span> Du prøver MinBiz uten konto, med eksempeldata. Ingenting lagres, og alt forsvinner når du lukker siden. <a href="app.html">Logg inn for å lagre</a>.</div>
 </div>
 <header class="top">
   <div class="wrap">
@@ -71,6 +71,12 @@
       <button type="button" data-view="data">Mine data</button>
     </nav>
 
+    <!-- Fremdrift: Min idé, Brainstorming, Skrivebordsanalyse, Verktøy, Plan -->
+    <nav class="flow" id="flow" aria-label="Fra idé til plan" hidden>
+      <ol id="flow-steps"></ol>
+      <p id="flow-now" class="small muted"></p>
+    </nav>
+
     <!-- Oversikt -->
     <section class="view stack" id="view-dash" aria-labelledby="h-dash">
       <h2 id="h-dash">Oversikt</h2>
@@ -79,7 +85,9 @@
         <ol>
           <li>Fyll inn <button type="button" class="linkish" data-goto="profil">profilen din</button>.</li>
           <li>Beskriv <button type="button" class="linkish" data-goto="ide">idéen din</button>.</li>
-          <li>Lag <button type="button" class="linkish" data-goto="plan">planen</button>.</li>
+          <li>Samle tanker i <button type="button" class="linkish" data-goto="brainstorm">brainstormingen</button>.</li>
+          <li>Finn fakta i <button type="button" class="linkish" data-goto="analyse">skrivebordsanalysen</button>.</li>
+          <li>Se hvilke <button type="button" class="linkish" data-goto="verktoy">verktøy</button> MinBiz anbefaler, og lag planen.</li>
         </ol>
       </div>
       <div id="dash-plan" class="stack" hidden>
@@ -190,7 +198,10 @@
             <textarea id="promise" maxlength="1000"></textarea>
           </div>
           <p id="idea-err" class="missing" role="alert"></p>
-          <div class="btnrow"><button type="submit" class="btn">Lagre idéen</button></div>
+          <div class="btnrow">
+            <button type="submit" class="btn">Lagre idéen</button>
+            <button type="button" class="btn quiet" id="to-brainstorm">Neste: brainstorming</button>
+          </div>
         </form>
         <div class="card idea-card stack" aria-labelledby="h-idea-card">
           <h3 id="h-idea-card">Idékortet ditt</h3>
@@ -200,12 +211,64 @@
       </div>
     </section>
 
+    <!-- Brainstorming -->
+    <section class="view stack" id="view-brainstorm" aria-labelledby="h-brainstorm" hidden>
+      <h2 id="h-brainstorm">Brainstorming</h2>
+      <div id="bs-needs-idea" class="note warn" hidden>Lagre idéen din først. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
+      <div id="bs-body" class="stack">
+        <p>Skriv korte idékort til spørsmålene under. Alt her er idéer og tanker, ikke fakta. Merk de beste som favoritt. Kortene lagres med en gang.</p>
+        <div id="bs-inspo" class="card stack"></div>
+        <div id="bs-questions" class="stack"></div>
+        <div class="btnrow">
+          <button type="button" class="btn" id="bs-done">Ferdig, gå til skrivebordsanalysen</button>
+          <button type="button" class="btn quiet" id="bs-skip">Hopp over</button>
+        </div>
+        <p class="muted small">Hopper du over, merkes brainstormingen [Mangler]. Du kan komme tilbake når du vil.</p>
+      </div>
+    </section>
+
+    <!-- Skrivebordsanalyse -->
+    <section class="view stack" id="view-analyse" aria-labelledby="h-analyse" hidden>
+      <h2 id="h-analyse">Skrivebordsanalyse</h2>
+      <div id="an-needs-idea" class="note warn" hidden>Lagre idéen din først. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
+      <div id="an-body" class="stack">
+        <div class="note">
+          <p><span class="tag soon">Under utvikling</span> Automatisk analyse med KI kommer senere.</p>
+          <p>I dag hjelper MinBiz deg å gjøre analysen selv, med ferdige søk i åpne kilder. Skriv hva du fant og lim inn adressen til kilden. Et funn uten adresse merkes [Antakelse].</p>
+        </div>
+        <div class="card grid two">
+          <div class="field">
+            <label for="an-keyword">Søkeord <span class="hint">Hentet fra tittelen på idéen. Endre det gjerne til det folk faktisk søker etter.</span></label>
+            <input type="text" id="an-keyword" maxlength="80" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="an-place">Område <span class="hint">Valgfritt, for eksempel kommunen din.</span></label>
+            <input type="text" id="an-place" maxlength="60" autocomplete="off">
+          </div>
+        </div>
+        <div id="an-areas" class="stack"></div>
+        <div class="btnrow">
+          <button type="button" class="btn" id="an-done">Ferdig, se verktøyene</button>
+          <button type="button" class="btn quiet" id="an-skip">Hopp over</button>
+        </div>
+        <p class="muted small">Hopper du over, merkes analysen [Mangler]. Da legger MinBiz inn steg i planen for å finne det ut underveis.</p>
+      </div>
+    </section>
+
+    <!-- Verktøy -->
+    <section class="view stack" id="view-verktoy" aria-labelledby="h-verktoy" hidden>
+      <h2 id="h-verktoy">Verktøy</h2>
+      <div id="vt-needs-idea" class="note warn" hidden>Lagre idéen din først. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
+      <div id="vt-body" class="stack"></div>
+    </section>
+
     <!-- Plan -->
     <section class="view stack" id="view-plan" aria-labelledby="h-plan" hidden>
       <h2 id="h-plan">Plan</h2>
       <div id="plan-needs-idea" class="note warn" hidden>Lagre idéen din først, så kan MinBiz lage en plan. <button type="button" class="linkish" data-goto="ide">Gå til Min idé</button></div>
       <form id="plan-form" class="card stack" novalidate>
         <p id="suggest" class="note"></p>
+        <p id="plan-flow-note" class="note warn" hidden></p>
         <fieldset>
           <legend>Velg plantype</legend>
           <div class="ptypes" id="ptypes"></div>
