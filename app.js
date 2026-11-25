@@ -986,7 +986,7 @@
     if (risks.length) steps.push({ title: "Bestem hva du gjør hvis noe går galt", list: risks.slice(0, 3).map(function (c) { return "Hvis: " + c.text; }), why: "Du skrev ned risikoer i brainstormingen. En kort plan for dem gjør starten tryggere." });
     var agents = [{ name: "Planlederen", why: "Holder oversikt over planen og foreslår neste steg. Bestemmer aldri for deg." }];
     if (!investigated("marked") || !investigated("konkurrenter") || !investigated("malgruppe")) agents.push({ name: "Markedsforskeren", why: "Kan finne fakta om marked, målgruppe og konkurrenter i åpne kilder, med kilde på hvert funn." });
-    if (!investigated("regler")) agents.push({ name: "Juss-hjelperen", why: "Kan forklare registrering og regler med lenke til lovteksten, og si når du bør snakke med en fagperson." });
+    if (!investigated("regler")) agents.push({ name: "Forretningsjuristen", why: "Kan forklare registrering og regler med lenke til lovteksten, og si når du bør snakke med en fagperson." });
     if (!investigated("pris")) agents.push({ name: "Økonomen", why: "Kan regne på pris og budsjett med dine egne tall." });
     if (missing(i.promise)) agents.push({ name: "Tekstskriveren", why: "Løftet ditt mangler. Tekstskriveren kan foreslå det, og du godkjenner." });
     agents.push({ name: "Coachen", why: "Følger opp og feirer når du når et mål. Uten press." });
